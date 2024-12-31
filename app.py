@@ -17,6 +17,9 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
+from flask_wtf.csrf import CSRFProtect
+from datetime import timedelta
+import os
 
 # Initialize Flask app
 # Add after your imports in app.py
@@ -50,6 +53,21 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
+# CSRF Protection
+csrf = CSRFProtect(app)
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_SECRET_KEY'] = os.urandom(32)
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hour
+
+# Session configuration
+app.config.update(
+    SESSION_COOKIE_SECURE=False,  # Set to True in production with HTTPS
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
+    
+)
+
 # Import db_manager after app initialization
 from database import db_manager
 
@@ -67,6 +85,18 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
+
+# Add near the top of app.py, after Flask import
+from flask_wtf.csrf import CSRFProtect
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
+
+# Update app configuration
+app.config.update(
+    WTF_CSRF_ENABLED=True,
+    WTF_CSRF_SECRET_KEY=os.environ.get('WTF_CSRF_SECRET_KEY', os.urandom(24))
+)
 
 class User(UserMixin):
     def __init__(self, user_data):
@@ -339,7 +369,7 @@ def upload_file():
             os.remove(filepath)
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/train/<file_id>', methods=['POST'])
+@app.route('/train/<file_id>', methods=['GET', 'POST'])
 @login_required
 def train_model(file_id):
     try:
@@ -352,7 +382,14 @@ def train_model(file_id):
             if not file_info:
                 return jsonify({'error': 'File not found'}), 404
 
-            # Read dataset
+            if request.method == 'GET':
+                # Return the training configuration page
+                return render_template(
+                    'train_model.html',
+                    file_info=file_info
+                )
+
+            # POST request - train the model
             df = pd.read_csv(file_info['filepath'])
             target_column = file_info['target_column']
 
@@ -406,8 +443,7 @@ def train_model(file_id):
                     metrics['feature_importance'] = feature_importance
                     
                     results[name] = metrics
-                    
-            else:  # Regression
+            else:
                 models = {
                     'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
                     'gradient_boosting': GradientBoostingRegressor(random_state=42)
@@ -439,7 +475,7 @@ def train_model(file_id):
                 'file_id': file_id,
                 'results': results,
                 'created_at': datetime.utcnow(),
-                'status': 'pending_approval',
+                'status': 'completed',
                 'task_type': file_info['task_type'],
                 'target_column': target_column,
                 'parameters': {
@@ -456,7 +492,7 @@ def train_model(file_id):
                 'success': True,
                 'report_id': str(report_id.inserted_id),
                 'results': results,
-                'message': 'Models trained successfully. View report for details.'
+                'message': 'Models trained successfully.'
             })
 
     except Exception as e:
@@ -501,6 +537,7 @@ def delete_dataset(file_id):
 def view_dataset(file_id):
     try:
         with db_manager.get_mongo_connection() as mongo_db:
+            # Get file info
             file_info = mongo_db.uploads.find_one({
                 "_id": ObjectId(file_id),
                 "username": current_user.username
@@ -510,7 +547,10 @@ def view_dataset(file_id):
                 flash('Dataset not found', 'error')
                 return redirect(url_for('dashboard'))
 
+            # Read the CSV file
             df = pd.read_csv(file_info['filepath'])
+            
+            # Get basic statistics
             numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
             stats = {}
             for col in numeric_cols:
@@ -521,6 +561,13 @@ def view_dataset(file_id):
                     'max': float(df[col].max())
                 }
 
+            # Get past model reports
+            past_reports = list(mongo_db.model_reports.find({
+                "file_id": str(file_id),
+                "username": current_user.username,
+                "status": "completed"
+            }).sort("created_at", -1))
+
             return render_template(
                 'view_dataset.html',
                 file_info=file_info,
@@ -528,14 +575,15 @@ def view_dataset(file_id):
                 columns=list(df.columns),
                 stats=stats,
                 shape=df.shape,
-                dtypes=df.dtypes.astype(str).to_dict()
+                dtypes=df.dtypes.astype(str).to_dict(),
+                past_reports=past_reports
             )
 
     except Exception as e:
         app.logger.error(f"Error viewing dataset: {e}")
         flash('Error loading dataset', 'error')
         return redirect(url_for('dashboard'))
-
+    
 @app.route('/get_model_features/<report_id>')
 @login_required
 def get_model_features(report_id):
@@ -569,6 +617,42 @@ def get_model_features(report_id):
     except Exception as e:
         app.logger.error(f"Error getting model features: {e}")
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/view_report/<report_id>')
+@login_required
+def view_report(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            # Get report data
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                flash('Report not found', 'error')
+                return redirect(url_for('dashboard'))
+
+            # Get associated file info
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(report['file_id'])
+            })
+            
+            if not file_info:
+                flash('Associated dataset not found', 'error')
+                return redirect(url_for('dashboard'))
+
+            return render_template(
+                'view_report.html',
+                report=report,
+                file_info=file_info,
+                model_results=report['results']
+            )
+
+    except Exception as e:
+        app.logger.error(f"Error viewing report: {e}")
+        flash('Error loading report', 'error')
+        return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     app.run(debug=Config.DEBUG, host='127.0.0.1', port=5000)

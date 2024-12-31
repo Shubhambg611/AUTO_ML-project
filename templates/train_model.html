@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Train Models - AutoML Platform</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex-shrink-0 flex items-center">
+                    <a href="/" class="text-xl font-bold text-gray-800">AutoML Platform</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800">Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-6">Train Models - {{ file_info.filename }}</h2>
+
+            <!-- Dataset Information -->
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold mb-2">Dataset Information</h3>
+                <div class="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
+                    <div>
+                        <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
+                        <p><span class="font-semibold">Target Column:</span> {{ file_info.target_column }}</p>
+                    </div>
+                    <div>
+                        <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Training Progress -->
+            <div class="mt-6">
+                <h3 class="text-lg font-semibold mb-4">Training Progress</h3>
+                <div id="progressSection" class="space-y-4">
+                    <div class="bg-blue-100 p-4 rounded">
+                        <p class="text-blue-700">Training will begin when you click the button below.</p>
+                    </div>
+                    <div id="modelStatus" class="hidden"></div>
+                    <button onclick="startTraining('{{ file_info._id }}')" id="trainButton"
+                            class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        Start Training
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function startTraining(fileId) {
+            const button = document.getElementById('trainButton');
+            const statusDiv = document.getElementById('modelStatus');
+            
+            button.disabled = true;
+            button.textContent = 'Training in Progress...';
+            
+            statusDiv.innerHTML = `
+                <div class="bg-yellow-100 p-4 rounded">
+                    <p class="text-yellow-700">Training models, please wait...</p>
+                </div>
+            `;
+            statusDiv.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/train/${fileId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token() }}'
+                    },
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div class="bg-green-100 p-4 rounded">
+                            <p class="text-green-700">${data.message}</p>
+                        </div>
+                    `;
+                    // Redirect to report page after short delay
+                    setTimeout(() => {
+                        window.location.href = `/view_report/${data.report_id}`;
+                    }, 1500);
+                } else {
+                    throw new Error(data.error || 'Training failed');
+                }
+            } catch (error) {
+                console.error('Training error:', error);
+                statusDiv.innerHTML = `
+                    <div class="bg-red-100 p-4 rounded">
+                        <p class="text-red-700">Error: ${error.message}</p>
+                    </div>
+                `;
+                button.disabled = false;
+                button.textContent = 'Retry Training';
+            }
+        }
+    </script>
+</body>
+</html>

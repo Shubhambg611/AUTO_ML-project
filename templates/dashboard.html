@@ -19,7 +19,9 @@
                 </div>
                 <div class="flex items-center">
                     <span class="text-gray-700 mr-4">Welcome, {{ username }}!</span>
-                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                        Logout
+                    </a>
                 </div>
             </div>
         </div>
@@ -131,7 +133,7 @@
                                                     class="text-green-500 hover:text-green-700 focus:outline-none">
                                                 Train Models
                                             </button>
-                                            <button onclick="deleteDataset('{{ file._id }}', '{{ file.filename }}')"
+                                            <button onclick="deleteDataset('{{ file._id }}')"
                                                     class="text-red-500 hover:text-red-700 focus:outline-none">
                                                 Delete
                                             </button>
@@ -201,10 +203,20 @@
             e.preventDefault();
             
             const formData = new FormData();
-            formData.append('file', document.getElementById('csvFile').files[0]);
-            formData.append('task_type', document.getElementById('task_type').value);
-            formData.append('target_column', document.getElementById('target_column').value);
-            formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
+            const file = document.getElementById('csvFile').files[0];
+            const taskType = document.getElementById('task_type').value;
+            const targetColumn = document.getElementById('target_column').value;
+            const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+
+            if (!file || !taskType || !targetColumn) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            formData.append('file', file);
+            formData.append('task_type', taskType);
+            formData.append('target_column', targetColumn);
+            formData.append('csrf_token', csrfToken);
 
             const submitButton = document.getElementById('uploadButton');
             submitButton.disabled = true;
@@ -214,12 +226,15 @@
                 const response = await fetch('/upload', {
                     method: 'POST',
                     body: formData,
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    },
                     credentials: 'same-origin'
                 });
                 
-                if (response.redirected) {
-                    window.location.href = response.url;
-                    return;
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Upload failed');
                 }
                 
                 const data = await response.json();
@@ -230,7 +245,7 @@
                 }
             } catch (error) {
                 console.error('Upload error:', error);
-                alert(error.message || 'Upload failed');
+                alert(error.message || 'Error uploading file');
             } finally {
                 submitButton.disabled = false;
                 submitButton.textContent = 'Upload and Process';
@@ -283,15 +298,22 @@
             });
         }
 
-        // Dataset management functions
-        function deleteDataset(fileId, filename) {
-            if (confirm(`Are you sure you want to delete ${filename}? This action cannot be undone.`)) {
+        // Dataset actions
+        function trainModels(fileId) {
+            window.location.href = `/train/${fileId}`;
+        }
+
+        function deleteDataset(fileId) {
+            if (confirm('Are you sure you want to delete this dataset? This action cannot be undone.')) {
+                const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+                
                 fetch(`/delete_dataset/${fileId}`, {
                     method: 'POST',
-                    credentials: 'same-origin',
                     headers: {
-                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
-                    }
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    credentials: 'same-origin'
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -306,37 +328,6 @@
                     alert(error.message || 'Error deleting dataset');
                 });
             }
-        }
-
-        function trainModels(fileId) {
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = 'Training...';
-
-            fetch(`/train/${fileId}`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Models trained successfully! Report ID: ' + data.report_id);
-                    window.location.href = `/view_report/${data.report_id}`;
-                } else {
-                    throw new Error(data.error || 'Training failed');
-                }
-            })
-            .catch(error => {
-                console.error('Training error:', error);
-                alert(error.message || 'Error training models');
-            })
-            .finally(() => {
-                button.disabled = false;
-                button.textContent = 'Train Models';
-            });
         }
     </script>
 </body>

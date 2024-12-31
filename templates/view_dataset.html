@@ -7,42 +7,75 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <!-- Navigation Bar -->
-    <nav class="bg-white shadow-lg">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg mb-6">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
-                    </div>
+                <div class="flex-shrink-0 flex items-center">
+                    <a href="/" class="text-xl font-bold text-gray-800">AutoML Platform</a>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <a href="{{ url_for('dashboard') }}" class="text-blue-500 hover:text-blue-700">Dashboard</a>
-                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
-                        Logout
-                    </a>
+                    <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800">Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
                 </div>
             </div>
         </div>
     </nav>
 
-    <div class="container mx-auto px-4 py-8">
+    <div class="container mx-auto px-4">
         <!-- Dataset Information -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-2xl font-bold mb-4">Dataset Information</h2>
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid md:grid-cols-2 gap-4">
                 <div>
-                    <p><span class="font-semibold">Filename:</span> {{ file_info.original_filename }}</p>
-                    <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-                    <p><span class="font-semibold">Status:</span> {{ file_info.status }}</p>
+                    <p><span class="font-semibold">Filename:</span> {{ file_info.filename }}</p>
+                    <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
+                    <p><span class="font-semibold">Target Column:</span> {{ file_info.target_column }}</p>
                 </div>
                 <div>
+                    <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                     <p><span class="font-semibold">Rows:</span> {{ shape[0] }}</p>
                     <p><span class="font-semibold">Columns:</span> {{ shape[1] }}</p>
-                    <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
                 </div>
             </div>
         </div>
+
+        <!-- Past Model Results -->
+        {% if past_reports %}
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">Past Training Results</h2>
+            {% for report in past_reports %}
+                <div class="mb-6 last:mb-0">
+                    <h3 class="text-lg font-semibold mb-2">Training Run - {{ report.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</h3>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        {% for model_name, results in report.results.items() %}
+                            <div class="bg-gray-50 rounded p-4">
+                                <h4 class="font-semibold text-lg mb-2">{{ model_name|title }}</h4>
+                                {% if file_info.task_type == 'classification' %}
+                                    <p><span class="font-semibold">Accuracy:</span> {{ "%.2f"|format(results.accuracy * 100) }}%</p>
+                                    <p><span class="font-semibold">Precision:</span> {{ "%.2f"|format(results.precision * 100) }}%</p>
+                                    <p><span class="font-semibold">Recall:</span> {{ "%.2f"|format(results.recall * 100) }}%</p>
+                                    <p><span class="font-semibold">F1 Score:</span> {{ "%.2f"|format(results.f1 * 100) }}%</p>
+                                {% else %}
+                                    <p><span class="font-semibold">RMSE:</span> {{ "%.4f"|format(results.rmse) }}</p>
+                                    <p><span class="font-semibold">R² Score:</span> {{ "%.4f"|format(results.r2) }}</p>
+                                {% endif %}
+                                <p><span class="font-semibold">Cross-Validation Score:</span> 
+                                   {{ "%.2f"|format(results.cv_score_mean * 100) }}% (±{{ "%.2f"|format(results.cv_score_std * 100) }}%)
+                                </p>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mt-2">
+                        <a href="{{ url_for('view_report', report_id=report._id) }}" 
+                           class="text-blue-600 hover:text-blue-800">
+                            View Full Report
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         <!-- Data Preview -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -95,11 +128,45 @@
 
         <!-- Actions -->
         <div class="mt-6 flex justify-end space-x-4">
-            <button onclick="window.location.href='{{ url_for('train_model', file_id=file_info._id) }}'" 
-                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                Train Models
+            <button onclick="trainModels('{{ file_info._id }}')" 
+                    class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                Train New Models
+            </button>
+            <button onclick="deleteDataset('{{ file_info._id }}')"
+                    class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                Delete Dataset
             </button>
         </div>
     </div>
+
+    <script>
+        function trainModels(fileId) {
+            window.location.href = `/train/${fileId}`;
+        }
+
+        function deleteDataset(fileId) {
+            if (confirm('Are you sure you want to delete this dataset? This action cannot be undone.')) {
+                fetch(`/delete_dataset/${fileId}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token() }}'
+                    },
+                    credentials: 'same-origin'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/dashboard';
+                    } else {
+                        throw new Error(data.error || 'Delete failed');
+                    }
+                })
+                .catch(error => {
+                    console.error('Delete error:', error);
+                    alert(error.message || 'Error deleting dataset');
+                });
+            }
+        }
+    </script>
 </body>
 </html>

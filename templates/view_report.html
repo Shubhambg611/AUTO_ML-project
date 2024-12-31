@@ -51,32 +51,12 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <p><span class="font-semibold">Accuracy:</span> {{ "%.2f"|format(results.accuracy * 100) }}%</p>
-                                    <p><span class="font-semibold">CV Score:</span> {{ "%.2f"|format(results.cv_scores_mean * 100) }}% (±{{ "%.2f"|format(results.cv_scores_std * 100) }}%)</p>
+                                    <p><span class="font-semibold">Precision:</span> {{ "%.2f"|format(results.precision * 100) }}%</p>
+                                    <p><span class="font-semibold">Recall:</span> {{ "%.2f"|format(results.recall * 100) }}%</p>
+                                    <p><span class="font-semibold">F1 Score:</span> {{ "%.2f"|format(results.f1 * 100) }}%</p>
                                 </div>
                                 <div>
-                                    <!-- Classification Report -->
-                                    <table class="min-w-full">
-                                        <thead>
-                                            <tr>
-                                                <th class="text-left">Class</th>
-                                                <th class="text-left">Precision</th>
-                                                <th class="text-left">Recall</th>
-                                                <th class="text-left">F1-Score</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for class_name, metrics in results.classification_report.items() %}
-                                                {% if class_name not in ['accuracy', 'macro avg', 'weighted avg'] %}
-                                                    <tr>
-                                                        <td>{{ class_name }}</td>
-                                                        <td>{{ "%.2f"|format(metrics.precision * 100) }}%</td>
-                                                        <td>{{ "%.2f"|format(metrics.recall * 100) }}%</td>
-                                                        <td>{{ "%.2f"|format(metrics['f1-score'] * 100) }}%</td>
-                                                    </tr>
-                                                {% endif %}
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+                                    <p><span class="font-semibold">Cross-Validation Score:</span> {{ "%.2f"|format(results.cv_score_mean * 100) }}% (±{{ "%.2f"|format(results.cv_score_std * 100) }}%)</p>
                                 </div>
                             </div>
                         {% else %}
@@ -86,7 +66,21 @@
                                     <p><span class="font-semibold">R² Score:</span> {{ "%.4f"|format(results.r2) }}</p>
                                 </div>
                                 <div>
-                                    <p><span class="font-semibold">CV RMSE:</span> {{ "%.4f"|format(results.cv_scores_mean) }} (±{{ "%.4f"|format(results.cv_scores_std) }})</p>
+                                    <p><span class="font-semibold">Cross-Validation Score:</span> {{ "%.4f"|format(results.cv_score_mean) }} (±{{ "%.4f"|format(results.cv_score_std) }})</p>
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        <!-- Feature Importance -->
+                        {% if results.feature_importance %}
+                            <div class="mt-4">
+                                <h5 class="font-semibold mb-2">Feature Importance</h5>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                    {% for feature, importance in results.feature_importance.items() %}
+                                        <div class="bg-white p-2 rounded border">
+                                            <p class="text-sm">{{ feature }}: {{ "%.4f"|format(importance) }}</p>
+                                        </div>
+                                    {% endfor %}
                                 </div>
                             </div>
                         {% endif %}
@@ -94,38 +88,14 @@
                 {% endfor %}
             </div>
 
-            <!-- Approval Section -->
-            {% if report.status == 'pending_approval' %}
-                <div class="mt-6 flex justify-end">
-                    <button onclick="approveReport('{{ report._id }}')"
-                            class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                        Approve Report
-                    </button>
-                </div>
-            {% endif %}
+            <!-- Back to Dataset -->
+            <div class="mt-6">
+                <a href="{{ url_for('view_dataset', file_id=report.file_id) }}" 
+                   class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Back to Dataset
+                </a>
+            </div>
         </div>
     </div>
-
-    <script>
-        async function approveReport(reportId) {
-            try {
-                const response = await fetch(`/approve_report/${reportId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to approve report');
-                }
-
-                window.location.reload();
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error approving report');
-            }
-        }
-    </script>
 </body>
 </html>
