@@ -1,0 +1,6 @@
+__pycache__
+logs
+uploads
+.env
+app.logs
+info.txt
