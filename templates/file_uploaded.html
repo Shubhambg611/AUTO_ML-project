@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Uploaded - AutoML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <header>
+        <h1>File Uploaded Successfully</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/logout">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+    <section>
+        <h2>File Details</h2>
+        <p>File {{ filename }} uploaded successfully.</p>
+        <p>DataFrame Shape: {{ shape }}</p>
+        <!-- Further processing or actions can be shown here -->
+    </section>
+</body>
+</html>

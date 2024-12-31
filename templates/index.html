@@ -1,0 +1,37 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to AutoML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Welcome to AutoML Platform</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/login">Login</a></li>
+                <li><a href="/report">View Report</a></li>
+            </ul>
+        </nav>
+    </header>
+    <section>
+        <h2>Automated Machine Learning Platform</h2>
+        <p>Upload your data and let the platform analyze it.</p>
+        
+        <a href="/login"><button>Login</button></a>
+        <a href="/report"><button>View Report</button></a>
+        
+        <!-- Form for CSV File Upload -->
+        <h3>Upload CSV File</h3>
+        <form action="/upload" method="POST" enctype="multipart/form-data">
+            <label for="csv_file">Select CSV File:</label>
+            <input type="file" name="csv_file" id="csv_file" accept=".csv" required>
+            <button type="submit">Upload</button>
+        </form>
+    </section>
+</body>
+</html>

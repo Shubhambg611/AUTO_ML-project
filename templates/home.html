@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoML Platform</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <!-- Navigation Bar -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <span class="text-2xl font-bold text-gray-800">AutoML Platform</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('login') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded">
+                        Login
+                    </a>
+                    <a href="{{ url_for('register') }}" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-6 rounded">
+                        Register
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <div class="container mx-auto px-4 py-16">
+        <div class="text-center">
+            <h1 class="text-4xl font-bold text-gray-900 mb-8">
+                Welcome to AutoML Platform
+            </h1>
+            <p class="text-xl text-gray-600 mb-12">
+                Automate your machine learning workflow with ease. Upload your data, select your target, and let our platform handle the rest.
+            </p>
+            <div class="space-x-4">
+                <a href="{{ url_for('login') }}" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg">
+                    Get Started
+                </a>
+            </div>
+        </div>
+
+        <!-- Features Section -->
+        <div class="grid md:grid-cols-3 gap-8 mt-16">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="text-2xl mb-4 text-blue-500">📊</div>
+                <h3 class="text-xl font-semibold mb-2">Data Processing</h3>
+                <p class="text-gray-600">Automated data preprocessing and cleaning for your machine learning needs.</p>
+            </div>
+            
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="text-2xl mb-4 text-green-500">🤖</div>
+                <h3 class="text-xl font-semibold mb-2">Model Training</h3>
+                <p class="text-gray-600">Train and evaluate multiple machine learning models automatically.</p>
+            </div>
+            
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="text-2xl mb-4 text-purple-500">📈</div>
+                <h3 class="text-xl font-semibold mb-2">Performance Analysis</h3>
+                <p class="text-gray-600">Get detailed model performance metrics and downloadable reports.</p>
+            </div>
+        </div>
+
+        <!-- How It Works Section -->
+        <div class="mt-16">
+            <h2 class="text-3xl font-bold text-center mb-8">How It Works</h2>
+            <div class="grid md:grid-cols-4 gap-6">
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <div class="text-xl font-bold mb-2">1</div>
+                    <p class="text-gray-700">Upload your dataset</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <div class="text-xl font-bold mb-2">2</div>
+                    <p class="text-gray-700">Select task type</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <div class="text-xl font-bold mb-2">3</div>
+                    <p class="text-gray-700">Configure parameters</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <div class="text-xl font-bold mb-2">4</div>
+                    <p class="text-gray-700">Get results</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white mt-16 py-8">
+        <div class="container mx-auto px-4">
+            <div class="text-center text-gray-600">
+                <p>&copy; 2024 AutoML Platform. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

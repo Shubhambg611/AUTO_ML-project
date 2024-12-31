@@ -1,0 +1,28 @@
+2024-12-25 11:00:45,275 - INFO - Starting Flask application.
+2024-12-25 11:00:45,281 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2024-12-25 11:00:45,281 - INFO - [33mPress CTRL+C to quit[0m
+2024-12-25 11:00:45,285 - INFO -  * Restarting with watchdog (inotify)
+2024-12-25 11:00:45,924 - INFO - Starting Flask application.
+2024-12-25 11:00:45,927 - WARNING -  * Debugger is active!
+2024-12-25 11:00:45,927 - INFO -  * Debugger PIN: 117-103-441
+2024-12-25 11:01:20,208 - INFO - 127.0.0.1 - - [25/Dec/2024 11:01:20] "[31m[1mGET / HTTP/1.1[0m" 401 -
+2024-12-25 11:09:29,413 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,442 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,443 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,581 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,584 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,584 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,749 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,752 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,752 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,884 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,886 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:29,887 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,013 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,015 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,016 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,166 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,168 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,168 - INFO -  * Detected change in '/mnt/A42AC5272AC4F778/AUTO_ML/app.py', reloading
+2024-12-25 11:09:30,345 - INFO -  * Restarting with watchdog (inotify)

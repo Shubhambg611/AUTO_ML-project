@@ -1,1 +1,0 @@
-this is webapp which we can use to suggest the best ML algo with respect to data 

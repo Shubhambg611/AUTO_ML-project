@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Report</title>
+</head>
+<body>
+    <h1>Model Training Report</h1>
+    <p>Accuracy: {{ report['accuracy'] * 100 }}%</p>
+    <p>Model saved as: {{ report['model_filename'] }}</p>
+    <br>
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Dataset - AutoML Platform</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <!-- Navigation Bar -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('dashboard') }}" class="text-blue-500 hover:text-blue-700">Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <!-- Dataset Information -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">Dataset Information</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p><span class="font-semibold">Filename:</span> {{ file_info.original_filename }}</p>
+                    <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                    <p><span class="font-semibold">Status:</span> {{ file_info.status }}</p>
+                </div>
+                <div>
+                    <p><span class="font-semibold">Rows:</span> {{ shape[0] }}</p>
+                    <p><span class="font-semibold">Columns:</span> {{ shape[1] }}</p>
+                    <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Preview -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">Data Preview</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            {% for column in columns %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {{ column }}
+                                <br>
+                                <span class="text-xs text-gray-400">({{ dtypes[column] }})</span>
+                            </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for row in preview_data %}
+                        <tr>
+                            {% for column in columns %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {{ row[column] }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Column Statistics -->
+        {% if stats %}
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-4">Column Statistics</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for column, stat in stats.items() %}
+                <div class="bg-gray-50 p-4 rounded">
+                    <h3 class="font-semibold mb-2">{{ column }}</h3>
+                    <p><span class="font-medium">Mean:</span> {{ "%.2f"|format(stat.mean) }}</p>
+                    <p><span class="font-medium">Std:</span> {{ "%.2f"|format(stat.std) }}</p>
+                    <p><span class="font-medium">Min:</span> {{ "%.2f"|format(stat.min) }}</p>
+                    <p><span class="font-medium">Max:</span> {{ "%.2f"|format(stat.max) }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Actions -->
+        <div class="mt-6 flex justify-end space-x-4">
+            <button onclick="window.location.href='{{ url_for('train_model', file_id=file_info._id) }}'" 
+                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Train Models
+            </button>
+        </div>
+    </div>
+</body>
+</html>

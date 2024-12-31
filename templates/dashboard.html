@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AutoML Platform</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <!-- Navigation Bar -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <span class="text-gray-700 mr-4">Welcome, {{ username }}!</span>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-4 p-4 rounded {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- File Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">Upload New Dataset</h2>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="grid grid-cols-1 gap-6">
+                    <!-- File Selection -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="csvFile">
+                            Select CSV File
+                        </label>
+                        <input type="file" id="csvFile" name="file" accept=".csv" required
+                               class="w-full p-2 border rounded">
+                    </div>
+
+                    <!-- Data Preview Section -->
+                    <div id="dataPreviewSection" class="hidden">
+                        <div class="mb-4">
+                            <h3 class="text-lg font-semibold mb-2">Data Preview</h3>
+                            <div class="overflow-x-auto bg-gray-50 rounded">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50" id="previewHeader"></thead>
+                                    <tbody class="bg-white divide-y divide-gray-200" id="previewBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Column Stats -->
+                        <div id="columnStats" class="mb-4">
+                            <h3 class="text-lg font-semibold mb-2">Column Information</h3>
+                            <div id="columnStatsContent" class="grid grid-cols-2 gap-4"></div>
+                        </div>
+
+                        <!-- Task Type & Target Column -->
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-gray-700 text-sm font-bold mb-2" for="task_type">
+                                    Task Type
+                                </label>
+                                <select id="task_type" name="task_type" required class="w-full p-2 border rounded">
+                                    <option value="classification">Classification</option>
+                                    <option value="regression">Regression</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-bold mb-2" for="target_column">
+                                    Target Column
+                                </label>
+                                <select id="target_column" name="target_column" required class="w-full p-2 border rounded">
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="uploadButton"
+                                class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            Upload and Process
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Datasets Section -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold mb-4">Your Datasets</h2>
+            {% if files %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full table-auto">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="px-4 py-2 text-left">Filename</th>
+                                <th class="px-4 py-2 text-left">Task Type</th>
+                                <th class="px-4 py-2 text-left">Target Column</th>
+                                <th class="px-4 py-2 text-left">Upload Date</th>
+                                <th class="px-4 py-2 text-left">Status</th>
+                                <th class="px-4 py-2 text-left">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                                <tr class="border-t">
+                                    <td class="px-4 py-2">{{ file.filename }}</td>
+                                    <td class="px-4 py-2">{{ file.task_type }}</td>
+                                    <td class="px-4 py-2">{{ file.target_column }}</td>
+                                    <td class="px-4 py-2">{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td class="px-4 py-2">{{ file.status }}</td>
+                                    <td class="px-4 py-2">
+                                        <div class="flex space-x-4">
+                                            <a href="{{ url_for('view_dataset', file_id=file._id) }}" 
+                                               class="text-blue-500 hover:text-blue-700">View Details</a>
+                                            <button onclick="trainModels('{{ file._id }}')"
+                                                    class="text-green-500 hover:text-green-700 focus:outline-none">
+                                                Train Models
+                                            </button>
+                                            <button onclick="deleteDataset('{{ file._id }}', '{{ file.filename }}')"
+                                                    class="text-red-500 hover:text-red-700 focus:outline-none">
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-600">No datasets uploaded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // File selection handler
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true,
+                    preview: 5,
+                    dynamicTyping: true,
+                    complete: function(results) {
+                        document.getElementById('dataPreviewSection').classList.remove('hidden');
+                        
+                        const columns = results.meta.fields;
+                        
+                        // Populate target column dropdown
+                        const targetSelect = document.getElementById('target_column');
+                        targetSelect.innerHTML = '<option value="">Select target column</option>';
+                        columns.forEach(column => {
+                            targetSelect.innerHTML += `<option value="${column}">${column}</option>`;
+                        });
+
+                        // Create preview table
+                        const headerRow = '<tr>' + 
+                            columns.map(col => `
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    ${col}
+                                </th>
+                            `).join('') + '</tr>';
+                        document.getElementById('previewHeader').innerHTML = headerRow;
+
+                        const bodyRows = results.data.map(row => 
+                            '<tr>' + 
+                            columns.map(col => `
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    ${row[col] !== null ? row[col] : ''}
+                                </td>
+                            `).join('') + '</tr>'
+                        ).join('');
+                        document.getElementById('previewBody').innerHTML = bodyRows;
+
+                        // Calculate and display stats
+                        const stats = calculateColumnStats(results.data, columns);
+                        displayColumnStats(stats);
+                    }
+                });
+            }
+        });
+
+        // Form submission handler
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('file', document.getElementById('csvFile').files[0]);
+            formData.append('task_type', document.getElementById('task_type').value);
+            formData.append('target_column', document.getElementById('target_column').value);
+            formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
+
+            const submitButton = document.getElementById('uploadButton');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Uploading...';
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+                
+                if (response.redirected) {
+                    window.location.href = response.url;
+                    return;
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    throw new Error(data.error || 'Upload failed');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert(error.message || 'Upload failed');
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Upload and Process';
+            }
+        });
+
+        // Column statistics calculator
+        function calculateColumnStats(data, columns) {
+            const stats = {};
+            columns.forEach(col => {
+                const values = data.map(row => row[col]).filter(val => val !== null && val !== '');
+                const numeric = values.every(v => typeof v === 'number');
+                
+                stats[col] = {
+                    type: numeric ? 'numeric' : 'categorical',
+                    unique: new Set(values).size,
+                    missing: data.length - values.length
+                };
+
+                if (numeric) {
+                    const numValues = values.map(v => Number(v));
+                    stats[col].min = Math.min(...numValues);
+                    stats[col].max = Math.max(...numValues);
+                    stats[col].mean = numValues.reduce((a, b) => a + b, 0) / numValues.length;
+                }
+            });
+            return stats;
+        }
+
+        // Display column statistics
+        function displayColumnStats(stats) {
+            const container = document.getElementById('columnStatsContent');
+            container.innerHTML = '';
+            
+            Object.entries(stats).forEach(([column, stat]) => {
+                const div = document.createElement('div');
+                div.className = 'bg-gray-50 p-4 rounded';
+                div.innerHTML = `
+                    <h4 class="font-semibold">${column}</h4>
+                    <p class="text-sm">Type: ${stat.type}</p>
+                    <p class="text-sm">Unique Values: ${stat.unique}</p>
+                    <p class="text-sm">Missing Values: ${stat.missing}</p>
+                    ${stat.type === 'numeric' ? `
+                        <p class="text-sm">Min: ${stat.min.toFixed(2)}</p>
+                        <p class="text-sm">Max: ${stat.max.toFixed(2)}</p>
+                        <p class="text-sm">Mean: ${stat.mean.toFixed(2)}</p>
+                    ` : ''}
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Dataset management functions
+        function deleteDataset(fileId, filename) {
+            if (confirm(`Are you sure you want to delete ${filename}? This action cannot be undone.`)) {
+                fetch(`/delete_dataset/${fileId}`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        throw new Error(data.error || 'Delete failed');
+                    }
+                })
+                .catch(error => {
+                    console.error('Delete error:', error);
+                    alert(error.message || 'Error deleting dataset');
+                });
+            }
+        }
+
+        function trainModels(fileId) {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = 'Training...';
+
+            fetch(`/train/${fileId}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Models trained successfully! Report ID: ' + data.report_id);
+                    window.location.href = `/view_report/${data.report_id}`;
+                } else {
+                    throw new Error(data.error || 'Training failed');
+                }
+            })
+            .catch(error => {
+                console.error('Training error:', error);
+                alert(error.message || 'Error training models');
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.textContent = 'Train Models';
+            });
+        }
+    </script>
+</body>
+</html>
