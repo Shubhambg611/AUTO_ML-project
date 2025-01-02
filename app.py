@@ -1,28 +1,57 @@
-from flask import Flask, request, render_template, redirect, url_for, flash, jsonify
+# Flask and related imports
+from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_wtf.csrf import CSRFProtect
+
+# Werkzeug utilities
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+
+# Standard library imports
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+import json
+import warnings
+
+# Data processing and analysis
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# MongoDB
 from bson import ObjectId
+
+# Local imports
 from config import Config
 from database import db_manager
+from profiling import DataProfiler
+
+# Scikit-learn imports
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
-from flask_wtf.csrf import CSRFProtect
-from datetime import timedelta
-import os
+from sklearn.metrics import (
+    accuracy_score, 
+    precision_score, 
+    recall_score, 
+    f1_score, 
+    mean_squared_error, 
+    r2_score
+)
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    RandomForestRegressor,
+    GradientBoostingClassifier,
+    GradientBoostingRegressor
+)
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
-# Initialize Flask app
-# Add after your imports in app.py
+# Statistics
+import scipy.stats as stats
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
 
 # Initialize directories
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,26 +67,21 @@ app.config.from_object(Config)
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_SECRET_KEY'] = os.urandom(32)
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hour
 
 # Set up logging
-handler = RotatingFileHandler('logs/app.log', maxBytes=10000000, backupCount=5)
+LOG_DIR = os.path.join(str(Path.home()), 'automl_logs')
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+log_file = os.path.join(LOG_DIR, 'app.log')
+handler = RotatingFileHandler(log_file, maxBytes=10000000, backupCount=5)
 handler.setFormatter(logging.Formatter(
     '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
 ))
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
-
-# Initialize Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-login_manager.login_message_category = 'info'
-
-# CSRF Protection
-csrf = CSRFProtect(app)
-app.config['WTF_CSRF_ENABLED'] = True
-app.config['WTF_CSRF_SECRET_KEY'] = os.urandom(32)
-app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hour
 
 # Session configuration
 app.config.update(
@@ -65,38 +89,13 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
-    
 )
-
-# Import db_manager after app initialization
-from database import db_manager
-
-# Set up logging
-handler = RotatingFileHandler('logs/app.log', maxBytes=10000000, backupCount=5)
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-))
-app.logger.addHandler(handler)
-app.logger.setLevel(logging.INFO)
-app.logger.info('AutoML platform startup')
 
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
-
-# Add near the top of app.py, after Flask import
-from flask_wtf.csrf import CSRFProtect
-
-# Initialize CSRF protection
-csrf = CSRFProtect(app)
-
-# Update app configuration
-app.config.update(
-    WTF_CSRF_ENABLED=True,
-    WTF_CSRF_SECRET_KEY=os.environ.get('WTF_CSRF_SECRET_KEY', os.urandom(24))
-)
 
 class User(UserMixin):
     def __init__(self, user_data):
@@ -107,25 +106,6 @@ class User(UserMixin):
 
     def get_id(self):
         return str(self.id)
-
-def validate_file_size(file):
-    try:
-        file.seek(0, 2)
-        size = file.tell()
-        file.seek(0)
-        
-        max_size = app.config.get('MAX_CONTENT_LENGTH', 50 * 1024 * 1024)
-        if size > max_size:
-            return False, f"File size ({size / 1024 / 1024:.1f}MB) exceeds maximum allowed size ({max_size / 1024 / 1024:.0f}MB)"
-        return True, ""
-    except Exception as e:
-        return False, f"Error checking file size: {str(e)}"
-
-@app.errorhandler(413)
-def request_entity_too_large(error):
-    return jsonify({
-        'error': f'File too large. Maximum file size is {app.config["MAX_CONTENT_LENGTH"] / 1024 / 1024}MB'
-    }), 413
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -138,6 +118,202 @@ def load_user(user_id):
     except Exception as e:
         app.logger.error(f"Error loading user: {e}")
         return None
+
+def perform_enhanced_eda(df, target_column):
+    """Perform comprehensive EDA"""
+    # Get missing value information
+    missing_values = {}
+    for col in df.columns:
+        missing_count = df[col].isnull().sum()
+        if missing_count > 0:
+            missing_values[col] = {
+                'count': int(missing_count),
+                'percentage': float((missing_count / len(df)) * 100)
+            }
+    
+    # Get numerical and categorical columns
+    numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    
+    # Build comprehensive EDA results
+    eda_results = {
+        'basic_info': {
+            'total_rows': len(df),
+            'total_columns': len(df.columns),
+            'memory_usage_mb': float(df.memory_usage(deep=True).sum() / (1024 * 1024)),
+            'duplicate_rows': int(df.duplicated().sum())
+        },
+        'missing_values': missing_values,
+        'numerical_cols': list(numerical_cols),
+        'categorical_cols': list(categorical_cols),
+        'correlations': analyze_correlations(df),
+        'numerical_stats': {},
+        'categorical_stats': {},
+        'target_analysis': analyze_target_distribution(df, target_column)
+    }
+    
+    # Calculate numerical statistics
+    for col in numerical_cols:
+        stats = df[col].describe()
+        eda_results['numerical_stats'][col] = {
+            'mean': float(stats['mean']),
+            'std': float(stats['std']),
+            'min': float(stats['min']),
+            'max': float(stats['max']),
+            'quartiles': {
+                '25%': float(stats['25%']),
+                '50%': float(stats['50%']),
+                '75%': float(stats['75%'])
+            }
+        }
+    
+    # Calculate categorical statistics
+    for col in categorical_cols:
+        value_counts = df[col].value_counts()
+        eda_results['categorical_stats'][col] = {
+            'unique_values': int(value_counts.count()),
+            'top_values': value_counts.head(5).to_dict(),
+            'value_counts': value_counts.to_dict()
+        }
+    
+    return eda_results
+
+def analyze_target_distribution(df, target_column):
+    """Analyze target variable distribution"""
+    target_analysis = {
+        'type': 'categorical' if df[target_column].dtype == 'object' else 'numeric',
+        'unique_count': int(df[target_column].nunique()),
+        'missing_count': int(df[target_column].isnull().sum())
+    }
+    
+    if target_analysis['type'] == 'numeric':
+        stats = df[target_column].describe()
+        target_analysis.update({
+            'mean': float(stats['mean']),
+            'std': float(stats['std']),
+            'min': float(stats['min']),
+            'max': float(stats['max']),
+            'quartiles': {
+                '25%': float(stats['25%']),
+                '50%': float(stats['50%']),
+                '75%': float(stats['75%'])
+            }
+        })
+    else:
+        value_counts = df[target_column].value_counts()
+        target_analysis.update({
+            'value_counts': value_counts.to_dict(),
+            'percentages': (value_counts / len(df) * 100).to_dict()
+        })
+    
+    return target_analysis
+
+def analyze_correlations(df):
+    """Analyze correlations between features"""
+    numeric_df = df.select_dtypes(include=['int64', 'float64'])
+    
+    if len(numeric_df.columns) < 2:
+        return {
+            'has_correlations': False,
+            'message': 'Not enough numeric columns for correlation analysis'
+        }
+    
+    correlation_matrix = numeric_df.corr().round(4)
+    
+    return {
+        'has_correlations': True,
+        'correlation_matrix': correlation_matrix.to_dict()
+    }
+
+def preprocess_dataset(df, target_column, task_type):
+    """Preprocess dataset for ML"""
+    preprocessing_steps = {
+        'steps_taken': [],
+        'dropped_columns': [],
+        'encoded_columns': [],
+        'scaled_columns': []
+    }
+    
+    # Create a copy
+    data = df.copy()
+    encoders = {}
+    
+    try:
+        # Handle missing values first
+        for column in data.columns:
+            missing_count = data[column].isnull().sum()
+            if missing_count > 0:
+                if pd.api.types.is_numeric_dtype(data[column]):
+                    data[column].fillna(data[column].mean(), inplace=True)
+                    preprocessing_steps['steps_taken'].append(f"Filled missing values in {column} with mean")
+                else:
+                    data[column].fillna(data[column].mode()[0], inplace=True)
+                    preprocessing_steps['steps_taken'].append(f"Filled missing values in {column} with mode")
+        
+        # Handle target variable
+        y = data[target_column].copy()
+        if task_type == 'classification' or y.dtype == 'object':
+            le = LabelEncoder()
+            y = le.fit_transform(y.astype(str))
+            encoders['target'] = le
+            preprocessing_steps['steps_taken'].append(f"Label encoded target column: {target_column}")
+        
+        # Handle feature columns
+        X = data.drop(columns=[target_column])
+        for column in X.columns:
+            if X[column].dtype == 'object':
+                le = LabelEncoder()
+                X[column] = le.fit_transform(X[column].astype(str))
+                encoders[column] = le
+                preprocessing_steps['encoded_columns'].append(column)
+                preprocessing_steps['steps_taken'].append(f"Label encoded column: {column}")
+        
+        # Scale numeric features
+        numeric_columns = X.select_dtypes(include=[np.number]).columns
+        if len(numeric_columns) > 0:
+            scaler = StandardScaler()
+            X[numeric_columns] = scaler.fit_transform(X[numeric_columns])
+            preprocessing_steps['scaled_columns'] = numeric_columns.tolist()
+            preprocessing_steps['steps_taken'].append("Scaled numeric features")
+            encoders['scaler'] = scaler
+        
+        preprocessing_steps['final_features'] = list(X.columns)
+        return X, y, preprocessing_steps, encoders
+        
+    except Exception as e:
+        raise Exception(f"Preprocessing error: {str(e)}")
+
+def calculate_feature_importance(X, y, task_type):
+    """Calculate feature importance"""
+    importance_scores = {}
+    
+    # Random Forest Feature Importance
+    if task_type == 'classification':
+        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+        importance_metric = mutual_info_classif
+    else:
+        rf = RandomForestRegressor(n_estimators=100, random_state=42)
+        importance_metric = mutual_info_regression
+    
+    rf.fit(X, y)
+    importance_scores['random_forest'] = dict(zip(X.columns, rf.feature_importances_))
+    
+    # Mutual Information Feature Importance
+    mi_scores = importance_metric(X, y)
+    importance_scores['mutual_information'] = dict(zip(X.columns, mi_scores))
+    
+    # Aggregate and sort features by importance
+    feature_ranks = {}
+    for feature in X.columns:
+        feature_ranks[feature] = (
+            importance_scores['random_forest'][feature] +
+            importance_scores['mutual_information'][feature]
+        ) / 2
+    
+    return {
+        'detailed_scores': importance_scores,
+        'aggregate_ranks': dict(sorted(feature_ranks.items(), key=lambda x: x[1], reverse=True))
+    }
 
 @app.route('/')
 def home():
@@ -154,125 +330,70 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        try:
-            with db_manager.get_mysql_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-                user = cursor.fetchone()
-                
-                if user and check_password_hash(user['password'], password):
-                    user_obj = User(user)
-                    login_user(user_obj)
-                    
-                    cursor.execute("""
-                        UPDATE users 
-                        SET last_login = NOW() 
-                        WHERE id = %s
-                    """, (user['id'],))
-                    conn.commit()
-                    
-                    next_page = request.args.get('next')
-                    if not next_page or not next_page.startswith('/'):
-                        next_page = url_for('dashboard')
-                    return redirect(next_page)
-                
-                flash('Invalid username or password', 'error')
-                
-        except Exception as e:
-            app.logger.error(f"Login error: {e}")
-            flash('An error occurred during login', 'error')
+        with db_manager.get_mysql_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cursor.fetchone()
             
+            if user and check_password_hash(user['password'], password):
+                user_obj = User(user)
+                login_user(user_obj)
+                return redirect(url_for('dashboard'))
+            
+            flash('Invalid username or password', 'error')
+    
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
-
+        
     if request.method == 'POST':
-        try:
-            username = request.form.get('username')
-            password = request.form.get('password')
-            email = request.form.get('email')
-            name = request.form.get('name')
-            organization = request.form.get('organization', '')
-
-            with db_manager.get_mysql_connection() as conn:
-                cursor = conn.cursor()
+        username = request.form.get('username')
+        password = request.form.get('password')
+        email = request.form.get('email')
+        name = request.form.get('name')
+        organization = request.form.get('organization')
+        
+        with db_manager.get_mysql_connection() as conn:
+            cursor = conn.cursor()
+            # Check if username or email already exists
+            cursor.execute("SELECT * FROM users WHERE username = %s OR email = %s", (username, email))
+            if cursor.fetchone():
+                flash('Username or email already exists', 'error')
+                return render_template('register.html')
                 
-                # Check if username exists
-                cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-                if cursor.fetchone():
-                    flash('Username already exists', 'error')
-                    return render_template('register.html')
-                
-                # Check if email exists
-                cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
-                if cursor.fetchone():
-                    flash('Email already exists', 'error')
-                    return render_template('register.html')
-
-                # Create new user
-                cursor.execute("""
-                    INSERT INTO users (username, password, email, name, organization, created_at)
-                    VALUES (%s, %s, %s, %s, %s, NOW())
-                """, (
-                    username,
-                    generate_password_hash(password),
-                    email,
-                    name,
-                    organization
-                ))
-                conn.commit()
-
-            flash('Registration successful! Please login.', 'success')
-            return redirect(url_for('login'))
-
-        except Exception as e:
-            app.logger.error(f"Registration error: {e}")
-            flash('Registration failed. Please try again.', 'error')
-
+            hashed_password = generate_password_hash(password)
+            cursor.execute(
+                """INSERT INTO users (username, password, email, name, organization, created_at) 
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (username, hashed_password, email, name, organization, datetime.utcnow())
+            )
+            conn.commit()
+            
+        flash('Registration successful! Please login.', 'success')
+        return redirect(url_for('login'))
+        
     return render_template('register.html')
-
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    flash('Logged out successfully.', 'success')
-    return redirect(url_for('home'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
     try:
-        files = []
-        try:
-            with db_manager.get_mongo_connection() as mongo_db:
-                files = list(mongo_db.uploads.find(
-                    {"username": current_user.username}
-                ).sort("upload_date", -1))
-                
-                # Get reports for each file
-                for file in files:
-                    file['reports'] = list(mongo_db.model_reports.find({
-                        "file_id": str(file['_id']),
-                        "username": current_user.username
-                    }).sort("created_at", -1))
-                    
-        except Exception as e:
-            app.logger.error(f"MongoDB error: {e}")
-            flash('Error loading files from database', 'warning')
-
-        return render_template(
-            'dashboard.html',
-            username=current_user.username,
-            files=files
-        )
-
+        with db_manager.get_mongo_connection() as mongo_db:
+            files = list(mongo_db.uploads.find({"username": current_user.username}))
+            return render_template('dashboard.html', files=files, username=current_user.username)
     except Exception as e:
-        app.logger.error(f"Dashboard error: {str(e)}")
+        app.logger.error(f"Dashboard error: {e}")
         flash('Error loading dashboard', 'error')
         return redirect(url_for('home'))
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('home'))
 
 @app.route('/upload', methods=['POST'])
 @login_required
@@ -368,6 +489,38 @@ def upload_file():
         if 'filepath' in locals() and os.path.exists(filepath):
             os.remove(filepath)
         return jsonify({'success': False, 'error': str(e)}), 500
+    
+# Replace the generate_profile route with this:
+@app.route('/generate_profile/<file_id>')
+@login_required
+def generate_profile(file_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'File not found'}), 404
+
+            # Load data
+            df = pd.read_csv(file_info['filepath'])
+            
+            # Generate profile report
+            profiler = DataProfiler(df)
+            html_report = profiler.generate_html_report()
+            
+            # Save report
+            report_path = os.path.join(app.config['UPLOAD_FOLDER'], f'profile_{file_id}.html')
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(html_report)
+            
+            return send_file(report_path, as_attachment=False)
+
+    except Exception as e:
+        app.logger.error(f"Profile generation error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/train/<file_id>', methods=['GET', 'POST'])
 @login_required
@@ -382,118 +535,161 @@ def train_model(file_id):
             if not file_info:
                 return jsonify({'error': 'File not found'}), 404
 
-            if request.method == 'GET':
-                # Return the training configuration page
-                return render_template(
-                    'train_model.html',
-                    file_info=file_info
-                )
-
-            # POST request - train the model
+            # Load and analyze data
             df = pd.read_csv(file_info['filepath'])
             target_column = file_info['target_column']
-
-            # Prepare data
-            X = df.drop(target_column, axis=1)
-            y = df[target_column]
-
-            # Handle categorical variables
-            categorical_columns = X.select_dtypes(include=['object']).columns
-            for col in categorical_columns:
-                le = LabelEncoder()
-                X[col] = le.fit_transform(X[col])
-
-            if file_info['task_type'] == 'classification':
-                le_y = LabelEncoder()
-                y = le_y.fit_transform(y)
-
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-            # Scale features
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-
-            # Train models and get results
-            results = {}
             
-            if file_info['task_type'] == 'classification':
-                models = {
-                    'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
-                    'gradient_boosting': GradientBoostingClassifier(random_state=42)
-                }
-                
-                for name, model in models.items():
-                    model.fit(X_train_scaled, y_train)
-                    y_pred = model.predict(X_test_scaled)
-                    
-                    metrics = {
-                        'accuracy': accuracy_score(y_test, y_pred),
-                        'precision': precision_score(y_test, y_pred, average='weighted'),
-                        'recall': recall_score(y_test, y_pred, average='weighted'),
-                        'f1': f1_score(y_test, y_pred, average='weighted')
+            # Automatically detect task type
+            is_categorical = df[target_column].dtype == 'object' or df[target_column].nunique() < 10
+            task_type = 'classification' if is_categorical else 'regression'
+            
+            # Update file_info with correct task type
+            mongo_db.uploads.update_one(
+                {"_id": ObjectId(file_id)},
+                {"$set": {"task_type": task_type}}
+            )
+            file_info['task_type'] = task_type
+
+            if request.method == 'GET':
+                eda_results = perform_enhanced_eda(df, target_column)
+                return render_template(
+                    'train_model.html',
+                    file_info=file_info,
+                    eda_results=eda_results
+                )
+
+            try:
+                # Preprocess data
+                X, y, preprocessing_info, encoders = preprocess_dataset(
+                    df, target_column, task_type
+                )
+
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y if task_type == 'classification' else None
+                )
+
+                # Calculate feature importance
+                feature_importance = calculate_feature_importance(
+                    X, y, task_type
+                )
+
+                # Train and evaluate models
+                results = {}
+                if task_type == 'classification':
+                    models = {
+                        'random_forest': RandomForestClassifier(
+                            n_estimators=100,
+                            max_depth=None,
+                            min_samples_split=2,
+                            min_samples_leaf=1,
+                            random_state=42
+                        ),
+                        'gradient_boosting': GradientBoostingClassifier(
+                            n_estimators=100,
+                            learning_rate=0.1,
+                            max_depth=3,
+                            random_state=42
+                        )
                     }
                     
-                    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5)
-                    metrics['cv_score_mean'] = cv_scores.mean()
-                    metrics['cv_score_std'] = cv_scores.std()
-
-                    feature_importance = dict(zip(X.columns, model.feature_importances_))
-                    metrics['feature_importance'] = feature_importance
-                    
-                    results[name] = metrics
-            else:
-                models = {
-                    'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
-                    'gradient_boosting': GradientBoostingRegressor(random_state=42)
-                }
-                
-                for name, model in models.items():
-                    model.fit(X_train_scaled, y_train)
-                    y_pred = model.predict(X_test_scaled)
-                    
-                    mse = mean_squared_error(y_test, y_pred)
-                    metrics = {
-                        'rmse': np.sqrt(mse),
-                        'r2': r2_score(y_test, y_pred)
+                    for name, model in models.items():
+                        # Train model
+                        model.fit(X_train, y_train)
+                        
+                        # Get predictions
+                        y_pred = model.predict(X_test)
+                        
+                        # Calculate metrics
+                        metrics = {
+                            'accuracy': float(accuracy_score(y_test, y_pred)),
+                            'precision': float(precision_score(y_test, y_pred, average='weighted')),
+                            'recall': float(recall_score(y_test, y_pred, average='weighted')),
+                            'f1': float(f1_score(y_test, y_pred, average='weighted')),
+                            'feature_importance': dict(zip(X.columns, model.feature_importances_))
+                        }
+                        
+                        # Add cross-validation scores
+                        cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
+                        metrics['cv_score_mean'] = float(cv_scores.mean())
+                        metrics['cv_score_std'] = float(cv_scores.std())
+                        
+                        results[name] = metrics
+                else:
+                    models = {
+                        'random_forest': RandomForestRegressor(
+                            n_estimators=100,
+                            max_depth=None,
+                            min_samples_split=2,
+                            min_samples_leaf=1,
+                            random_state=42
+                        ),
+                        'gradient_boosting': GradientBoostingRegressor(
+                            n_estimators=100,
+                            learning_rate=0.1,
+                            max_depth=3,
+                            random_state=42
+                        )
                     }
                     
-                    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=5, scoring='r2')
-                    metrics['cv_score_mean'] = cv_scores.mean()
-                    metrics['cv_score_std'] = cv_scores.std()
+                    for name, model in models.items():
+                        # Train model
+                        model.fit(X_train, y_train)
+                        
+                        # Get predictions
+                        y_pred = model.predict(X_test)
+                        
+                        # Calculate metrics
+                        mse = mean_squared_error(y_test, y_pred)
+                        metrics = {
+                            'rmse': float(np.sqrt(mse)),
+                            'r2': float(r2_score(y_test, y_pred)),
+                            'feature_importance': dict(zip(X.columns, model.feature_importances_))
+                        }
+                        
+                        # Add cross-validation scores
+                        cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
+                        metrics['cv_score_mean'] = float(cv_scores.mean())
+                        metrics['cv_score_std'] = float(cv_scores.std())
+                        
+                        results[name] = metrics
 
-                    feature_importance = dict(zip(X.columns, model.feature_importances_))
-                    metrics['feature_importance'] = feature_importance
-                    
-                    results[name] = metrics
-
-            # Save results to MongoDB
-            report_data = {
-                'user_id': current_user.id,
-                'username': current_user.username,
-                'file_id': file_id,
-                'results': results,
-                'created_at': datetime.utcnow(),
-                'status': 'completed',
-                'task_type': file_info['task_type'],
-                'target_column': target_column,
-                'parameters': {
-                    'test_size': 0.2,
-                    'random_state': 42,
-                    'cv_folds': 5,
-                    'n_estimators': 100
+                # Save report
+                report_data = {
+                    'user_id': current_user.id,
+                    'username': current_user.username,
+                    'file_id': file_id,
+                    'eda_results': perform_enhanced_eda(df, target_column),
+                    'preprocessing_info': preprocessing_info,
+                    'feature_importance': feature_importance,
+                    'results': results,
+                    'created_at': datetime.utcnow(),
+                    'status': 'completed',
+                    'task_type': task_type,
+                    'target_column': target_column,
+                    'parameters': {
+                        'test_size': 0.2,
+                        'cv_folds': 5,
+                        'n_estimators': 100
+                    }
                 }
-            }
-            
-            report_id = mongo_db.model_reports.insert_one(report_data)
+                
+                report_id = mongo_db.model_reports.insert_one(report_data)
 
-            return jsonify({
-                'success': True,
-                'report_id': str(report_id.inserted_id),
-                'results': results,
-                'message': 'Models trained successfully.'
-            })
+                return jsonify({
+                    'success': True,
+                    'report_id': str(report_id.inserted_id),
+                    'results': results,
+                    'preprocessing_info': preprocessing_info,
+                    'feature_importance': feature_importance,
+                    'message': 'Models trained successfully.'
+                })
+
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 400
 
     except Exception as e:
         app.logger.error(f"Training error: {str(e)}")
@@ -537,7 +733,6 @@ def delete_dataset(file_id):
 def view_dataset(file_id):
     try:
         with db_manager.get_mongo_connection() as mongo_db:
-            # Get file info
             file_info = mongo_db.uploads.find_one({
                 "_id": ObjectId(file_id),
                 "username": current_user.username
@@ -583,7 +778,7 @@ def view_dataset(file_id):
         app.logger.error(f"Error viewing dataset: {e}")
         flash('Error loading dataset', 'error')
         return redirect(url_for('dashboard'))
-    
+
 @app.route('/get_model_features/<report_id>')
 @login_required
 def get_model_features(report_id):
@@ -617,13 +812,12 @@ def get_model_features(report_id):
     except Exception as e:
         app.logger.error(f"Error getting model features: {e}")
         return jsonify({'error': str(e)}), 500
-    
+
 @app.route('/view_report/<report_id>')
 @login_required
 def view_report(report_id):
     try:
         with db_manager.get_mongo_connection() as mongo_db:
-            # Get report data
             report = mongo_db.model_reports.find_one({
                 "_id": ObjectId(report_id),
                 "username": current_user.username
@@ -633,7 +827,6 @@ def view_report(report_id):
                 flash('Report not found', 'error')
                 return redirect(url_for('dashboard'))
 
-            # Get associated file info
             file_info = mongo_db.uploads.find_one({
                 "_id": ObjectId(report['file_id'])
             })

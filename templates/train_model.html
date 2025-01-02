@@ -5,14 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Train Models - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .feature-card {
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
     <nav class="bg-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between h-16">
-                <div class="flex-shrink-0 flex items-center">
-                    <a href="/" class="text-xl font-bold text-gray-800">AutoML Platform</a>
+                <div class="flex items-center">
+                    <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800">Dashboard</a>
@@ -22,56 +32,149 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
     <div class="container mx-auto px-4 py-8">
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-2xl font-bold mb-6">Train Models - {{ file_info.filename }}</h2>
 
             <!-- Dataset Information -->
-            <div class="mb-6">
-                <h3 class="text-lg font-semibold mb-2">Dataset Information</h3>
-                <div class="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
-                    <div>
-                        <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
-                        <p><span class="font-semibold">Target Column:</span> {{ file_info.target_column }}</p>
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Dataset Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p><span class="font-medium">Task Type:</span> {{ file_info.task_type }}</p>
+                        <p><span class="font-medium">Target Column:</span> {{ file_info.target_column }}</p>
+                        <p><span class="font-medium">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                     </div>
-                    <div>
-                        <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <button onclick="generateProfile('{{ file_info._id }}')"
+                                class="w-full bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                            Generate Detailed Profile Report
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Training Progress -->
-            <div class="mt-6">
-                <h3 class="text-lg font-semibold mb-4">Training Progress</h3>
-                <div id="progressSection" class="space-y-4">
-                    <div class="bg-blue-100 p-4 rounded">
-                        <p class="text-blue-700">Training will begin when you click the button below.</p>
-                    </div>
-                    <div id="modelStatus" class="hidden"></div>
-                    <button onclick="startTraining('{{ file_info._id }}')" id="trainButton"
-                            class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                        Start Training
-                    </button>
+            <!-- Correlation Matrix -->
+            {% if eda_results and eda_results.correlations and eda_results.correlations.has_correlations %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Feature Correlation Matrix</h3>
+                <div id="correlationMatrix" class="w-full h-96 bg-white rounded shadow"></div>
+            </div>
+            {% endif %}
+
+            <!-- Data Distribution -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Target Variable Distribution</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% if eda_results and eda_results.target_analysis %}
+                        {% set target = eda_results.target_analysis %}
+                        <div class="p-4 bg-gray-50 rounded">
+                            <h4 class="font-medium mb-2">Statistics</h4>
+                            <p><span class="text-gray-600">Type:</span> {{ target.type|title }}</p>
+                            <p><span class="text-gray-600">Unique Values:</span> {{ target.unique_count }}</p>
+                            {% if target.mean is defined %}
+                            <p><span class="text-gray-600">Mean:</span> {{ "%.4f"|format(target.mean) }}</p>
+                            <p><span class="text-gray-600">Std:</span> {{ "%.4f"|format(target.std) }}</p>
+                            {% endif %}
+                        </div>
+                    {% endif %}
                 </div>
+            </div>
+
+            <!-- Model Training Section -->
+            <div class="bg-blue-50 p-4 rounded mb-8">
+                <h3 class="text-lg font-semibold mb-4">Model Training Pipeline</h3>
+                <div class="space-y-2">
+                    <p class="text-blue-700">The system will:</p>
+                    <ul class="list-disc list-inside space-y-1 text-blue-600">
+                        <li>Handle missing values and outliers</li>
+                        <li>Perform feature engineering</li>
+                        <li>Select important features</li>
+                        <li>Train multiple models</li>
+                        <li>Evaluate performance with cross-validation</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Training Status -->
+            <div id="modelStatus" class="hidden mb-4"></div>
+
+            <!-- Training Button -->
+            <button onclick="startTraining('{{ file_info._id }}')"
+                    id="trainButton"
+                    class="w-full bg-green-500 hover:bg-green-700 text-white font-bold py-3 px-4 rounded mb-4">
+                Start Training
+            </button>
+
+            <!-- Navigation Buttons -->
+            <div class="flex space-x-4">
+                <a href="{{ url_for('view_dataset', file_id=file_info._id) }}"
+                   class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Back to Dataset
+                </a>
+                <a href="{{ url_for('dashboard') }}"
+                   class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                    Go to Dashboard
+                </a>
             </div>
         </div>
     </div>
 
     <script>
+        // Plot correlation matrix if data exists
+        {% if eda_results and eda_results.correlations and eda_results.correlations.has_correlations %}
+            const correlationData = {{ eda_results.correlations.correlation_matrix | tojson | safe }};
+            const featureNames = Object.keys(correlationData);
+            
+            const heatmapData = [{
+                z: featureNames.map(row => featureNames.map(col => correlationData[row][col])),
+                x: featureNames,
+                y: featureNames,
+                type: 'heatmap',
+                colorscale: 'Viridis',
+                showscale: true
+            }];
+            
+            const layout = {
+                title: 'Feature Correlation Matrix',
+                width: document.getElementById('correlationMatrix').offsetWidth,
+                height: 500,
+                margin: {
+                    l: 100,
+                    r: 50,
+                    b: 100,
+                    t: 50,
+                    pad: 4
+                },
+                xaxis: {
+                    tickangle: -45
+                }
+            };
+            
+            Plotly.newPlot('correlationMatrix', heatmapData, layout);
+
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                Plotly.relayout('correlationMatrix', {
+                    width: document.getElementById('correlationMatrix').offsetWidth
+                });
+            });
+        {% endif %}
+
+        // Training function
         async function startTraining(fileId) {
             const button = document.getElementById('trainButton');
             const statusDiv = document.getElementById('modelStatus');
             
             button.disabled = true;
             button.textContent = 'Training in Progress...';
+            statusDiv.classList.remove('hidden');
             
             statusDiv.innerHTML = `
-                <div class="bg-yellow-100 p-4 rounded">
-                    <p class="text-yellow-700">Training models, please wait...</p>
+                <div class="bg-yellow-50 p-4 rounded">
+                    <p class="text-yellow-700">Training models... This may take a few minutes.</p>
                 </div>
             `;
-            statusDiv.classList.remove('hidden');
 
             try {
                 const response = await fetch(`/train/${fileId}`, {
@@ -82,36 +185,38 @@
                     },
                     credentials: 'same-origin'
                 });
-
-                if (!response.ok) {
-                    throw new Error(await response.text());
-                }
-
+                
                 const data = await response.json();
-
-                if (data.success) {
-                    statusDiv.innerHTML = `
-                        <div class="bg-green-100 p-4 rounded">
-                            <p class="text-green-700">${data.message}</p>
-                        </div>
-                    `;
-                    // Redirect to report page after short delay
-                    setTimeout(() => {
-                        window.location.href = `/view_report/${data.report_id}`;
-                    }, 1500);
-                } else {
+                
+                if (!data.success) {
                     throw new Error(data.error || 'Training failed');
                 }
+                
+                statusDiv.innerHTML = `
+                    <div class="bg-green-50 p-4 rounded">
+                        <p class="text-green-700">Training completed successfully! Redirecting to results...</p>
+                    </div>
+                `;
+                
+                setTimeout(() => {
+                    window.location.href = `/view_report/${data.report_id}`;
+                }, 1500);
+                
             } catch (error) {
                 console.error('Training error:', error);
                 statusDiv.innerHTML = `
-                    <div class="bg-red-100 p-4 rounded">
+                    <div class="bg-red-50 p-4 rounded">
                         <p class="text-red-700">Error: ${error.message}</p>
                     </div>
                 `;
                 button.disabled = false;
                 button.textContent = 'Retry Training';
             }
+        }
+
+        // Function to generate profile report
+        function generateProfile(fileId) {
+            window.open(`/generate_profile/${fileId}`, '_blank');
         }
     </script>
 </body>

@@ -232,17 +232,12 @@
                     credentials: 'same-origin'
                 });
                 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Upload failed');
-                }
-                
                 const data = await response.json();
-                if (data.success) {
-                    window.location.reload();
-                } else {
+                if (!data.success) {
                     throw new Error(data.error || 'Upload failed');
                 }
+                
+                window.location.reload();
             } catch (error) {
                 console.error('Upload error:', error);
                 alert(error.message || 'Error uploading file');

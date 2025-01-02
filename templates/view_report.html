@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Model Report - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
@@ -27,75 +28,168 @@
             <h2 class="text-2xl font-bold mb-6">Model Training Report</h2>
 
             <!-- Basic Information -->
-            <div class="mb-6">
-                <h3 class="text-lg font-semibold mb-2">Task Information</h3>
-                <div class="grid grid-cols-2 gap-4">
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Task Information</h3>
+                <div class="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
                     <div>
-                        <p><span class="font-semibold">Task Type:</span> {{ report.task_type }}</p>
+                        <p><span class="font-semibold">Task Type:</span> {{ report.task_type|title }}</p>
                         <p><span class="font-semibold">Target Column:</span> {{ report.target_column }}</p>
                     </div>
                     <div>
-                        <p><span class="font-semibold">Status:</span> {{ report.status }}</p>
+                        <p><span class="font-semibold">Status:</span> {{ report.status|title }}</p>
                         <p><span class="font-semibold">Created:</span> {{ report.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Model Results -->
-            <div class="mb-6">
-                <h3 class="text-lg font-semibold mb-2">Model Results</h3>
-                {% for model_name, results in model_results.items() %}
-                    <div class="bg-gray-50 rounded p-4 mb-4">
-                        <h4 class="font-semibold text-lg mb-2">{{ model_name|title }}</h4>
-                        {% if report.task_type == 'classification' %}
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <p><span class="font-semibold">Accuracy:</span> {{ "%.2f"|format(results.accuracy * 100) }}%</p>
-                                    <p><span class="font-semibold">Precision:</span> {{ "%.2f"|format(results.precision * 100) }}%</p>
-                                    <p><span class="font-semibold">Recall:</span> {{ "%.2f"|format(results.recall * 100) }}%</p>
-                                    <p><span class="font-semibold">F1 Score:</span> {{ "%.2f"|format(results.f1 * 100) }}%</p>
+            <!-- Model Performance Summary -->
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Model Performance Summary</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {% for model_name, metrics in report.results.items() %}
+                        <div class="bg-gray-50 p-4 rounded shadow">
+                            <h4 class="font-bold text-lg mb-3 text-indigo-700">{{ model_name|replace('_', ' ')|title }}</h4>
+                            
+                            {% if report.task_type == 'classification' %}
+                                <!-- Classification Metrics -->
+                                <div class="space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">Accuracy:</span>
+                                        <span class="font-medium">{{ "%.2f"|format(metrics.accuracy * 100) }}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">Precision:</span>
+                                        <span class="font-medium">{{ "%.2f"|format(metrics.precision * 100) }}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">Recall:</span>
+                                        <span class="font-medium">{{ "%.2f"|format(metrics.recall * 100) }}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">F1 Score:</span>
+                                        <span class="font-medium">{{ "%.2f"|format(metrics.f1 * 100) }}%</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pt-2 border-t">
+                                        <span class="text-gray-600">Cross-Validation Score:</span>
+                                        <span class="font-medium">
+                                            {{ "%.2f"|format(metrics.cv_score_mean * 100) }}% ± {{ "%.2f"|format(metrics.cv_score_std * 100) }}%
+                                        </span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p><span class="font-semibold">Cross-Validation Score:</span> {{ "%.2f"|format(results.cv_score_mean * 100) }}% (±{{ "%.2f"|format(results.cv_score_std * 100) }}%)</p>
+                            {% else %}
+                                <!-- Regression Metrics -->
+                                <div class="space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">RMSE:</span>
+                                        <span class="font-medium">{{ "%.4f"|format(metrics.rmse) }}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">R² Score:</span>
+                                        <span class="font-medium">{{ "%.4f"|format(metrics.r2) }}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center pt-2 border-t">
+                                        <span class="text-gray-600">Cross-Validation Score:</span>
+                                        <span class="font-medium">
+                                            {{ "%.4f"|format(metrics.cv_score_mean) }} ± {{ "%.4f"|format(metrics.cv_score_std) }}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                        {% else %}
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <p><span class="font-semibold">RMSE:</span> {{ "%.4f"|format(results.rmse) }}</p>
-                                    <p><span class="font-semibold">R² Score:</span> {{ "%.4f"|format(results.r2) }}</p>
-                                </div>
-                                <div>
-                                    <p><span class="font-semibold">Cross-Validation Score:</span> {{ "%.4f"|format(results.cv_score_mean) }} (±{{ "%.4f"|format(results.cv_score_std) }})</p>
-                                </div>
-                            </div>
-                        {% endif %}
-
-                        <!-- Feature Importance -->
-                        {% if results.feature_importance %}
-                            <div class="mt-4">
-                                <h5 class="font-semibold mb-2">Feature Importance</h5>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                                    {% for feature, importance in results.feature_importance.items() %}
-                                        <div class="bg-white p-2 rounded border">
-                                            <p class="text-sm">{{ feature }}: {{ "%.4f"|format(importance) }}</p>
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        {% endif %}
-                    </div>
-                {% endfor %}
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
 
-            <!-- Back to Dataset -->
-            <div class="mt-6">
+            <!-- Preprocessing Information -->
+            {% if report.preprocessing_info and report.preprocessing_info.steps_taken %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Preprocessing Steps</h3>
+                <div class="bg-gray-50 rounded p-4">
+                    <ul class="list-disc list-inside space-y-1">
+                        {% for step in report.preprocessing_info.steps_taken %}
+                            <li class="text-gray-700">{{ step }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Feature Importance -->
+            {% if report.feature_importance and report.feature_importance.aggregate_ranks %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Feature Importance</h3>
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {% for feature, importance in report.feature_importance.aggregate_ranks|dictsort(by='value', reverse=true) %}
+                            <div class="bg-white p-3 rounded shadow">
+                                <p class="text-sm truncate" title="{{ feature }}">
+                                    <span class="font-medium">{{ feature }}:</span>
+                                    <span class="text-gray-600">{{ "%.4f"|format(importance) }}</span>
+                                </p>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Target Analysis -->
+            {% if report.eda_results and report.eda_results.target_analysis %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Target Variable Analysis</h3>
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-medium mb-2">Distribution Statistics</h4>
+                            {% set target = report.eda_results.target_analysis %}
+                            <p><span class="text-gray-600">Type:</span> {{ target.type|title }}</p>
+                            <p><span class="text-gray-600">Unique Values:</span> {{ target.unique_count }}</p>
+                            {% if target.type == 'numeric' %}
+                                <p><span class="text-gray-600">Mean:</span> {{ "%.4f"|format(target.mean) }}</p>
+                                <p><span class="text-gray-600">Standard Deviation:</span> {{ "%.4f"|format(target.std) }}</p>
+                            {% endif %}
+                        </div>
+                        {% if target.type == 'categorical' and target.value_counts %}
+                        <div>
+                            <h4 class="font-medium mb-2">Class Distribution</h4>
+                            {% for class, count in target.value_counts.items() %}
+                                <p><span class="text-gray-600">{{ class }}:</span> {{ count }}</p>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Actions -->
+            <div class="flex space-x-4">
                 <a href="{{ url_for('view_dataset', file_id=report.file_id) }}" 
                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                     Back to Dataset
                 </a>
+                <a href="{{ url_for('dashboard') }}" 
+                   class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                    Go to Dashboard
+                </a>
             </div>
         </div>
     </div>
+
+    <script>
+        // Add any additional JavaScript for interactivity here
+        document.addEventListener('DOMContentLoaded', function() {
+            // Example: Add hover effects on metric cards
+            const metricCards = document.querySelectorAll('.shadow');
+            metricCards.forEach(card => {
+                card.addEventListener('mouseover', () => {
+                    card.classList.add('shadow-lg');
+                });
+                card.addEventListener('mouseout', () => {
+                    card.classList.remove('shadow-lg');
+                });
+            });
+        });
+    </script>
 </body>
 </html>
