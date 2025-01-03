@@ -6,22 +6,6 @@
     <title>Model Report - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        .prose {
-            max-width: 100%;
-            line-height: 1.6;
-        }
-        .prose h1, .prose h2, .prose h3 {
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            font-weight: 600;
-        }
-        .prose ul, .prose ol {
-            margin-left: 1.5em;
-            margin-bottom: 1em;
-        }
-    </style>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
@@ -29,10 +13,10 @@
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
-                    <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
+                    <a href="{{ url_for('dashboard') }}" class="text-xl font-bold text-gray-800">AutoML Platform</a>
                 </div>
-                <div class="flex items-center">
-                    <a href="{{ url_for('dashboard') }}" class="mr-4 text-blue-500 hover:text-blue-700">Dashboard</a>
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800">Dashboard</a>
                     <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
                 </div>
             </div>
@@ -58,53 +42,68 @@
                 </div>
             </div>
 
-            <!-- AI Model Insights Button -->
-            <div class="mb-8">
-                <button id="insightsButton" 
-                        onclick="getModelInsights('{{ report._id }}')"
-                        class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
-                    Get AI Model Insights
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-4 mb-8">
+                <button onclick="deployModel('{{ report._id }}')"
+                        class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    Deploy Model
                 </button>
-            </div>
-
-            <!-- AI Insights Section -->
-            <div id="aiInsightsSection" class="mb-8 hidden">
-                <h3 class="text-lg font-semibold mb-4">AI Model Insights</h3>
-                <div id="aiInsightsContent" class="bg-gray-50 p-4 rounded prose"></div>
+                <button onclick="analyzeErrors('{{ report._id }}')"
+                        class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                    Analyze Errors
+                </button>
+                <button onclick="downloadReport('{{ report._id }}')"
+                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Download Report
+                </button>
+                <button onclick="getModelInsights('{{ report._id }}')"
+                        class="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">
+                    Get AI Insights
+                </button>
             </div>
 
             <!-- Model Performance Summary -->
             <div class="mb-8">
                 <h3 class="text-lg font-semibold mb-4">Model Performance Summary</h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 gap-6">
                     {% for model_name, metrics in report.results.items() %}
                         <div class="bg-gray-50 p-4 rounded shadow">
-                            <h4 class="font-bold text-lg mb-3 text-indigo-700">{{ model_name|replace('_', ' ')|title }}</h4>
+                            <div class="flex justify-between items-start mb-4">
+                                <h4 class="font-bold text-lg text-indigo-700">{{ model_name|replace('_', ' ')|title }}</h4>
+                                <button onclick="downloadModelPkl('{{ report._id }}', '{{ model_name }}')"
+                                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm">
+                                    Download Model (.pkl)
+                                </button>
+                            </div>
                             
                             {% if report.task_type == 'classification' %}
                                 <!-- Classification Metrics -->
-                                <div class="space-y-2">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">Accuracy:</span>
-                                        <span class="font-medium">{{ "%.2f"|format(metrics.accuracy * 100) }}%</span>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-600">Accuracy:</span>
+                                            <span class="font-medium">{{ "%.2f"|format(metrics.accuracy * 100) }}%</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-600">Precision:</span>
+                                            <span class="font-medium">{{ "%.2f"|format(metrics.precision * 100) }}%</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-600">Recall:</span>
+                                            <span class="font-medium">{{ "%.2f"|format(metrics.recall * 100) }}%</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-600">F1 Score:</span>
+                                            <span class="font-medium">{{ "%.2f"|format(metrics.f1 * 100) }}%</span>
+                                        </div>
                                     </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">Precision:</span>
-                                        <span class="font-medium">{{ "%.2f"|format(metrics.precision * 100) }}%</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">Recall:</span>
-                                        <span class="font-medium">{{ "%.2f"|format(metrics.recall * 100) }}%</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">F1 Score:</span>
-                                        <span class="font-medium">{{ "%.2f"|format(metrics.f1 * 100) }}%</span>
-                                    </div>
-                                    <div class="flex justify-between items-center pt-2 border-t">
-                                        <span class="text-gray-600">Cross-Validation Score:</span>
-                                        <span class="font-medium">
-                                            {{ "%.2f"|format(metrics.cv_score_mean * 100) }}% ± {{ "%.2f"|format(metrics.cv_score_std * 100) }}%
-                                        </span>
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-gray-600">Cross-Validation:</span>
+                                            <span class="font-medium">
+                                                {{ "%.2f"|format(metrics.cv_score_mean * 100) }}% ± {{ "%.2f"|format(metrics.cv_score_std * 100) }}%
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             {% else %}
@@ -118,8 +117,8 @@
                                         <span class="text-gray-600">R² Score:</span>
                                         <span class="font-medium">{{ "%.4f"|format(metrics.r2) }}</span>
                                     </div>
-                                    <div class="flex justify-between items-center pt-2 border-t">
-                                        <span class="text-gray-600">Cross-Validation Score:</span>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-gray-600">Cross-Validation:</span>
                                         <span class="font-medium">
                                             {{ "%.4f"|format(metrics.cv_score_mean) }} ± {{ "%.4f"|format(metrics.cv_score_std) }}
                                         </span>
@@ -130,6 +129,14 @@
                     {% endfor %}
                 </div>
             </div>
+
+            <!-- Feature Importance -->
+            {% if report.feature_importance and report.feature_importance.aggregate_ranks %}
+            <div class="mb-8">
+                <h3 class="text-lg font-semibold mb-4">Feature Importance</h3>
+                <div id="featureImportancePlot" class="h-96 bg-gray-50 rounded p-4"></div>
+            </div>
+            {% endif %}
 
             <!-- Preprocessing Steps -->
             {% if report.preprocessing_info and report.preprocessing_info.steps_taken %}
@@ -145,44 +152,7 @@
             </div>
             {% endif %}
 
-            <!-- Feature Importance -->
-            {% if report.feature_importance and report.feature_importance.aggregate_ranks %}
-            <div class="mb-8">
-                <h3 class="text-lg font-semibold mb-4">Feature Importance</h3>
-                <div id="featureImportancePlot" class="h-96 bg-gray-50 rounded p-4"></div>
-            </div>
-            {% endif %}
-
-            <!-- Target Analysis -->
-            {% if report.eda_results and report.eda_results.target_analysis %}
-            <div class="mb-8">
-                <h3 class="text-lg font-semibold mb-4">Target Variable Analysis</h3>
-                <div class="bg-gray-50 p-4 rounded">
-                    <div class="grid md:grid-cols-2 gap-4">
-                        <div>
-                            <h4 class="font-medium mb-2">Distribution Statistics</h4>
-                            {% set target = report.eda_results.target_analysis %}
-                            <p class="mb-1"><span class="text-gray-600">Type:</span> {{ target.type|title }}</p>
-                            <p class="mb-1"><span class="text-gray-600">Unique Values:</span> {{ target.unique_count }}</p>
-                            {% if target.type == 'numeric' %}
-                                <p class="mb-1"><span class="text-gray-600">Mean:</span> {{ "%.4f"|format(target.mean) }}</p>
-                                <p class="mb-1"><span class="text-gray-600">Standard Deviation:</span> {{ "%.4f"|format(target.std) }}</p>
-                            {% endif %}
-                        </div>
-                        {% if target.type == 'categorical' and target.value_counts %}
-                        <div>
-                            <h4 class="font-medium mb-2">Class Distribution</h4>
-                            {% for class, count in target.value_counts.items() %}
-                                <p class="mb-1"><span class="text-gray-600">{{ class }}:</span> {{ count }}</p>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Actions -->
+            <!-- Back to Dataset -->
             <div class="flex space-x-4">
                 <a href="{{ url_for('view_dataset', file_id=report.file_id) }}" 
                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
@@ -192,6 +162,21 @@
                    class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
                     Go to Dashboard
                 </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modalTitle"></h3>
+                <div class="mt-2 px-7 py-3" id="modalContent"></div>
+                <div class="items-center px-4 py-3">
+                    <button id="modalClose" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -234,47 +219,103 @@
             Plotly.newPlot('featureImportancePlot', data, layout, {responsive: true});
         {% endif %}
 
-        // Get AI Model Insights
-        async function getModelInsights(reportId) {
+        // Helper function to show modal
+        function showModal(title, content) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalContent').innerHTML = content;
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        // Modal close button
+        document.getElementById('modalClose').onclick = function() {
+            document.getElementById('modal').classList.add('hidden');
+        }
+
+        // Model actions
+        async function deployModel(reportId) {
             try {
-                // Show loading state
-                const button = document.getElementById('insightsButton');
-                button.disabled = true;
-                button.innerHTML = 'Loading Insights...';
-
-                const response = await fetch(`/ai/model_insights/${reportId}`);
+                const response = await fetch(`/deploy/${reportId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    },
+                    credentials: 'same-origin'
+                });
+                
                 const data = await response.json();
-
+                
                 if (data.success) {
-                    // Show insights section
-                    const insightsSection = document.getElementById('aiInsightsSection');
-                    const insightsContent = document.getElementById('aiInsightsContent');
-                    
-                    insightsSection.classList.remove('hidden');
-                    insightsContent.innerHTML = marked.parse(data.insights);
-                    
-                    // Scroll to insights
-                    insightsSection.scrollIntoView({ behavior: 'smooth' });
+                    showModal('Success', `${data.message}<br><br>Deployment ID: ${data.deployment_id}`);
                 } else {
-                    throw new Error(data.error || 'Failed to get insights');
+                    throw new Error(data.error || 'Deployment failed');
                 }
             } catch (error) {
-                console.error('Model insights error:', error);
-                alert(`Error getting model insights: ${error.message}`);
-            } finally {
-                // Reset button state
-                const button = document.getElementById('insightsButton');
-                button.disabled = false;
-                button.innerHTML = 'Get AI Model Insights';
+                console.error('Deployment error:', error);
+                showModal('Error', `Failed to deploy model: ${error.message}`);
             }
         }
 
-        // Handle window resize for plots
+        async function analyzeErrors(reportId) {
+            try {
+                const response = await fetch(`/analyze/errors/${reportId}`);
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                const content = `
+                    <div class="space-y-4">
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Error Distribution</h4>
+                            ${Object.entries(data.error_distribution).map(([model, stats]) => `
+                                <div class="mb-2">
+                                    <p class="font-medium">${model}</p>
+                                    <div class="flex items-center">
+                                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div class="bg-blue-600 h-2.5 rounded-full" 
+                                                 style="width: ${stats.correct_predictions}%">
+                                            </div>
+                                        </div>
+                                        <span class="ml-2">${stats.correct_predictions.toFixed(2)}% Correct</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                showModal('Error Analysis', content);
+            } catch (error) {
+                console.error('Error analysis error:', error);
+                showModal('Error', `Failed to analyze errors: ${error.message}`);
+            }
+        }
+
+        function downloadReport(reportId) {
+            window.location.href = `/download_report/${reportId}`;
+        }
+
+        function downloadModelPkl(reportId, modelName) {
+            window.location.href = `/download_model_pkl/${reportId}/${modelName}`;
+        }
+
+        // Window resize handler for plots
         window.addEventListener('resize', function() {
-            Plotly.relayout('featureImportancePlot', {
-                width: document.getElementById('featureImportancePlot').offsetWidth
-            });
+            if (document.getElementById('featureImportancePlot')) {
+                Plotly.relayout('featureImportancePlot', {
+                    width: document.getElementById('featureImportancePlot').offsetWidth
+                });
+            }
         });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal');
+            if (event.target == modal) {
+                modal.classList.add('hidden');
+            }
+        }
     </script>
 </body>
 </html>
