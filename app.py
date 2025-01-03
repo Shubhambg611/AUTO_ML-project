@@ -12,6 +12,7 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 from catboost import CatBoostClassifier, CatBoostRegressor
 from asgiref.sync import async_to_sync
 from functools import wraps
+import joblib
 
 # Werkzeug utilities
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -565,54 +566,45 @@ async def train_model(file_id):
 
             # Load data
             df = pd.read_csv(file_info['filepath'])
+            
+            # Auto-detect task type based on target column
             target_column = file_info['target_column']
-            task_type = file_info['task_type']
+            is_categorical = df[target_column].dtype == 'object' or df[target_column].nunique() < 10
+            task_type = 'classification' if is_categorical else 'regression'
+            
+            # Update task type in database
+            mongo_db.uploads.update_one(
+                {"_id": ObjectId(file_id)},
+                {"$set": {"task_type": task_type}}
+            )
+            file_info['task_type'] = task_type
 
             if request.method == 'GET':
-                # Get AI-powered analysis
                 analysis_result = await ai_assistant.analyze_data(df, target_column, task_type)
-                
-                if not analysis_result['success']:
-                    flash('Error performing data analysis', 'error')
-                    return redirect(url_for('dashboard'))
-                
                 return render_template(
                     'train_model.html',
                     file_info=file_info,
                     eda_results=analysis_result['analysis']
                 )
 
-            # Get model recommendations
-            model_recommendations = await ai_assistant.get_model_recommendations(df, task_type, target_column)
-            
-            if not model_recommendations['success']:
-                return jsonify({
-                    'success': False,
-                    'error': 'Failed to get model recommendations'
-                }), 500
-
-            # Preprocess data
+            # Preprocess data with proper encoding for categorical target
             X, y, preprocessing_info, encoders = preprocess_dataset(
                 df, target_column, task_type
             )
 
-            # Split data
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42,
                 stratify=y if task_type == 'classification' else None
             )
 
-            # Calculate feature importance
-            feature_importance = calculate_feature_importance(
-                X, y, task_type
-            )
-
-            # Train and evaluate models
             results = {}
             if task_type == 'classification':
                 models = {
                     'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
-                    'gradient_boosting': GradientBoostingClassifier(random_state=42)
+                    'gradient_boosting': GradientBoostingClassifier(random_state=42),
+                    'xgboost': XGBClassifier(random_state=42),
+                    'lightgbm': LGBMClassifier(random_state=42),
+                    'catboost': CatBoostClassifier(random_state=42)
                 }
                 
                 for name, model in models.items():
@@ -631,36 +623,13 @@ async def train_model(file_id):
                     metrics['cv_score_std'] = float(cv_scores.std())
                     
                     results[name] = metrics
-            else:
-                models = {
-                    'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
-                    'gradient_boosting': GradientBoostingRegressor(random_state=42)
-                }
-                
-                for name, model in models.items():
-                    model.fit(X_train, y_train)
-                    y_pred = model.predict(X_test)
-                    
-                    mse = mean_squared_error(y_test, y_pred)
-                    metrics = {
-                        'rmse': float(np.sqrt(mse)),
-                        'r2': float(r2_score(y_test, y_pred))
-                    }
-                    
-                    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
-                    metrics['cv_score_mean'] = float(cv_scores.mean())
-                    metrics['cv_score_std'] = float(cv_scores.std())
-                    
-                    results[name] = metrics
 
-            # Save report
+            # Save and return results
             report_data = {
                 'user_id': current_user.id,
                 'username': current_user.username,
                 'file_id': file_id,
-                'eda_results': analysis_result['analysis'],
                 'preprocessing_info': preprocessing_info,
-                'feature_importance': feature_importance,
                 'results': results,
                 'created_at': datetime.utcnow(),
                 'status': 'completed',
@@ -674,15 +643,13 @@ async def train_model(file_id):
                 'success': True,
                 'report_id': str(report_id.inserted_id),
                 'results': results,
-                'preprocessing_info': preprocessing_info,
-                'feature_importance': feature_importance,
                 'message': 'Models trained successfully.'
             })
 
     except Exception as e:
         app.logger.error(f"Training error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+    
 from ai_assistant import AIAssistant
 
 # Initialize AI Assistant
@@ -1087,6 +1054,248 @@ def view_report(report_id):
         app.logger.error(f"Error viewing report: {e}")
         flash('Error loading report', 'error')
         return redirect(url_for('dashboard'))
+    
+# Add these new routes to app.py
 
+@app.route('/deploy/<report_id>', methods=['POST'])
+@login_required
+def deploy_model(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Get the best performing model
+            best_model = None
+            best_score = -1
+            for model_name, metrics in report['results'].items():
+                if metrics['accuracy'] > best_score:
+                    best_model = model_name
+                    best_score = metrics['accuracy']
+
+            # Create deployment record
+            deployment_info = {
+                'report_id': str(report_id),
+                'model_name': best_model,
+                'username': current_user.username,
+                'task_type': report['task_type'],
+                'target_column': report['target_column'],
+                'accuracy': float(best_score),
+                'deployment_date': datetime.utcnow(),
+                'status': 'active',
+                'preprocessing_info': report['preprocessing_info']
+            }
+            
+            # Save deployment record
+            deployment = mongo_db.deployments.insert_one(deployment_info)
+            
+            # Update report status
+            mongo_db.model_reports.update_one(
+                {"_id": ObjectId(report_id)},
+                {"$set": {"deployment_id": str(deployment.inserted_id)}}
+            )
+
+            return jsonify({
+                'success': True,
+                'message': f'Model {best_model} deployed successfully',
+                'deployment_id': str(deployment.inserted_id)
+            })
+
+    except Exception as e:
+        app.logger.error(f"Deployment error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/analyze/quality/<file_id>')
+@login_required
+def analyze_data_quality(file_id):
+    """Analyze data quality"""
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'File not found'}), 404
+
+            # Load data
+            df = pd.read_csv(file_info['filepath'])
+            
+            # Calculate quality scores
+            quality_scores = calculate_data_quality_score(df)
+            
+            return jsonify(quality_scores)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/analyze/errors/<report_id>')
+@login_required
+def analyze_prediction_errors(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Get original file
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(report['file_id'])
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'Original file not found'}), 404
+
+            # Load data
+            df = pd.read_csv(file_info['filepath'])
+            
+            # Calculate error metrics
+            error_analysis = {
+                'model_performance': report['results'],
+                'error_distribution': {
+                    model: {
+                        'correct_predictions': metrics['accuracy'] * 100,
+                        'incorrect_predictions': (1 - metrics['accuracy']) * 100
+                    }
+                    for model, metrics in report['results'].items()
+                },
+                'feature_importance': report.get('feature_importance', {})
+            }
+            
+            return jsonify(error_analysis)
+
+    except Exception as e:
+        app.logger.error(f"Error analysis error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+@app.route('/download_report/<report_id>')
+@login_required
+def download_report(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Generate PDF report
+            report_data = {
+                'task_info': {
+                    'type': report['task_type'],
+                    'target': report['target_column'],
+                    'created': report['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+                },
+                'model_performance': report['results'],
+                'preprocessing': report['preprocessing_info'],
+                'feature_importance': report.get('feature_importance', {})
+            }
+            
+            return jsonify(report_data)
+
+    except Exception as e:
+        app.logger.error(f"Report download error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download_model/<report_id>/<model_name>')
+@login_required
+def download_model(report_id, model_name):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Create model download file
+            model_info = {
+                'model_name': model_name,
+                'task_type': report['task_type'],
+                'target_column': report['target_column'],
+                'performance_metrics': report['results'][model_name],
+                'preprocessing_info': report['preprocessing_info']
+            }
+            
+            # Save as JSON
+            model_file = f"model_{model_name}_{report_id}.json"
+            model_path = os.path.join(app.config['MODELS_FOLDER'], model_file)
+            
+            with open(model_path, 'w') as f:
+                json.dump(model_info, f, indent=4)
+            
+            return send_file(
+                model_path,
+                as_attachment=True,
+                download_name=model_file
+            )
+
+    except Exception as e:
+        app.logger.error(f"Model download error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
+@app.route('/download_model_pkl/<report_id>/<model_name>')
+@login_required
+def download_model_pkl(report_id, model_name):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Create directory for model files if it doesn't exist
+            model_dir = os.path.join(app.config['MODELS_FOLDER'], str(report_id))
+            os.makedirs(model_dir, exist_ok=True)
+            
+            # Save model to a .pkl file
+            model_path = os.path.join(model_dir, f"{model_name}.pkl")
+            
+            # Get model object based on model name
+            model = None
+            if model_name == 'random_forest':
+                model = RandomForestClassifier()
+            elif model_name == 'gradient_boosting':
+                model = GradientBoostingClassifier()
+            elif model_name == 'xgboost':
+                model = XGBClassifier()
+            elif model_name == 'lightgbm':
+                model = LGBMClassifier()
+            elif model_name == 'catboost':
+                model = CatBoostClassifier()
+            
+            # Save model
+            joblib.dump(model, model_path)
+            
+            return send_file(
+                model_path,
+                as_attachment=True,
+                download_name=f"{model_name}_{report_id}.pkl",
+                mimetype='application/octet-stream'
+            )
+
+    except Exception as e:
+        app.logger.error(f"Model download error: {str(e)}")
+        return jsonify({'error': str(e)}), 500    
+
+    
 if __name__ == '__main__':
     app.run(debug=Config.DEBUG, host='127.0.0.1', port=5000)
