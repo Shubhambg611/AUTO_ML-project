@@ -2,6 +2,16 @@
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_wtf.csrf import CSRFProtect
+from sklearn.linear_model import LogisticRegression, LinearRegression, Lasso, Ridge
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+from xgboost import XGBClassifier, XGBRegressor
+from lightgbm import LGBMClassifier, LGBMRegressor
+from catboost import CatBoostClassifier, CatBoostRegressor
+from asgiref.sync import async_to_sync
+from functools import wraps
 
 # Werkzeug utilities
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -50,6 +60,15 @@ from sklearn.feature_selection import mutual_info_classif, mutual_info_regressio
 # Statistics
 import scipy.stats as stats
 
+from ai_assistant import AIAssistant
+import google.generativeai as genai
+from flask import current_app
+
+# Initialize Gemini at the start of app.py
+GOOGLE_API_KEY = 'AIzaSyCMemd6wrMxIzEsbhbYajJY0-ee5wXBrcw'
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel('gemini-pro')
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -96,6 +115,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
+
+def async_route(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        return async_to_sync(f)(*args, **kwargs)
+    return decorated_function
 
 class User(UserMixin):
     def __init__(self, user_data):
@@ -493,7 +518,8 @@ def upload_file():
 # Replace the generate_profile route with this:
 @app.route('/generate_profile/<file_id>')
 @login_required
-def generate_profile(file_id):
+@async_route
+async def generate_profile(file_id):
     try:
         with db_manager.get_mongo_connection() as mongo_db:
             file_info = mongo_db.uploads.find_one({
@@ -521,10 +547,151 @@ def generate_profile(file_id):
     except Exception as e:
         app.logger.error(f"Profile generation error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    pass
 
 @app.route('/train/<file_id>', methods=['GET', 'POST'])
 @login_required
-def train_model(file_id):
+@async_route
+async def train_model(file_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'File not found'}), 404
+
+            # Load data
+            df = pd.read_csv(file_info['filepath'])
+            target_column = file_info['target_column']
+            task_type = file_info['task_type']
+
+            if request.method == 'GET':
+                # Get AI-powered analysis
+                analysis_result = await ai_assistant.analyze_data(df, target_column, task_type)
+                
+                if not analysis_result['success']:
+                    flash('Error performing data analysis', 'error')
+                    return redirect(url_for('dashboard'))
+                
+                return render_template(
+                    'train_model.html',
+                    file_info=file_info,
+                    eda_results=analysis_result['analysis']
+                )
+
+            # Get model recommendations
+            model_recommendations = await ai_assistant.get_model_recommendations(df, task_type, target_column)
+            
+            if not model_recommendations['success']:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to get model recommendations'
+                }), 500
+
+            # Preprocess data
+            X, y, preprocessing_info, encoders = preprocess_dataset(
+                df, target_column, task_type
+            )
+
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42,
+                stratify=y if task_type == 'classification' else None
+            )
+
+            # Calculate feature importance
+            feature_importance = calculate_feature_importance(
+                X, y, task_type
+            )
+
+            # Train and evaluate models
+            results = {}
+            if task_type == 'classification':
+                models = {
+                    'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
+                    'gradient_boosting': GradientBoostingClassifier(random_state=42)
+                }
+                
+                for name, model in models.items():
+                    model.fit(X_train, y_train)
+                    y_pred = model.predict(X_test)
+                    
+                    metrics = {
+                        'accuracy': float(accuracy_score(y_test, y_pred)),
+                        'precision': float(precision_score(y_test, y_pred, average='weighted')),
+                        'recall': float(recall_score(y_test, y_pred, average='weighted')),
+                        'f1': float(f1_score(y_test, y_pred, average='weighted'))
+                    }
+                    
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=5)
+                    metrics['cv_score_mean'] = float(cv_scores.mean())
+                    metrics['cv_score_std'] = float(cv_scores.std())
+                    
+                    results[name] = metrics
+            else:
+                models = {
+                    'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
+                    'gradient_boosting': GradientBoostingRegressor(random_state=42)
+                }
+                
+                for name, model in models.items():
+                    model.fit(X_train, y_train)
+                    y_pred = model.predict(X_test)
+                    
+                    mse = mean_squared_error(y_test, y_pred)
+                    metrics = {
+                        'rmse': float(np.sqrt(mse)),
+                        'r2': float(r2_score(y_test, y_pred))
+                    }
+                    
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
+                    metrics['cv_score_mean'] = float(cv_scores.mean())
+                    metrics['cv_score_std'] = float(cv_scores.std())
+                    
+                    results[name] = metrics
+
+            # Save report
+            report_data = {
+                'user_id': current_user.id,
+                'username': current_user.username,
+                'file_id': file_id,
+                'eda_results': analysis_result['analysis'],
+                'preprocessing_info': preprocessing_info,
+                'feature_importance': feature_importance,
+                'results': results,
+                'created_at': datetime.utcnow(),
+                'status': 'completed',
+                'task_type': task_type,
+                'target_column': target_column
+            }
+            
+            report_id = mongo_db.model_reports.insert_one(report_data)
+
+            return jsonify({
+                'success': True,
+                'report_id': str(report_id.inserted_id),
+                'results': results,
+                'preprocessing_info': preprocessing_info,
+                'feature_importance': feature_importance,
+                'message': 'Models trained successfully.'
+            })
+
+    except Exception as e:
+        app.logger.error(f"Training error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+from ai_assistant import AIAssistant
+
+# Initialize AI Assistant
+ai_assistant = AIAssistant()
+
+@app.route('/ai/analyze_data/<file_id>')
+@login_required
+@async_route
+async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support it directly
     try:
         with db_manager.get_mongo_connection() as mongo_db:
             file_info = mongo_db.uploads.find_one({
@@ -537,163 +704,237 @@ def train_model(file_id):
 
             # Load and analyze data
             df = pd.read_csv(file_info['filepath'])
-            target_column = file_info['target_column']
             
-            # Automatically detect task type
-            is_categorical = df[target_column].dtype == 'object' or df[target_column].nunique() < 10
-            task_type = 'classification' if is_categorical else 'regression'
-            
-            # Update file_info with correct task type
-            mongo_db.uploads.update_one(
-                {"_id": ObjectId(file_id)},
-                {"$set": {"task_type": task_type}}
-            )
-            file_info['task_type'] = task_type
+            # Create dataset summary
+            dataset_info = {
+                'basic_info': {
+                    'rows': len(df),
+                    'columns': len(df.columns),
+                    'task_type': file_info['task_type'],
+                    'target_column': file_info['target_column']
+                },
+                'columns': {
+                    col: {
+                        'type': str(df[col].dtype),
+                        'unique_values': int(df[col].nunique()),
+                        'missing_values': int(df[col].isnull().sum())
+                    }
+                    for col in df.columns
+                }
+            }
 
-            if request.method == 'GET':
-                eda_results = perform_enhanced_eda(df, target_column)
-                return render_template(
-                    'train_model.html',
-                    file_info=file_info,
-                    eda_results=eda_results
-                )
+            # Add numeric statistics
+            for col in df.select_dtypes(include=['int64', 'float64']).columns:
+                stats = df[col].describe()
+                dataset_info['columns'][col].update({
+                    'mean': float(stats['mean']),
+                    'std': float(stats['std']),
+                    'min': float(stats['min']),
+                    'max': float(stats['max'])
+                })
+
+            # Generate analysis prompt
+            prompt = f"""
+            Analyze this dataset for machine learning:
+
+            Basic Information:
+            - Task Type: {file_info['task_type']}
+            - Target Column: {file_info['target_column']}
+            - Number of Rows: {dataset_info['basic_info']['rows']}
+            - Number of Columns: {dataset_info['basic_info']['columns']}
+
+            Column Details:
+            {json.dumps(dataset_info['columns'], indent=2)}
+
+            Provide a comprehensive analysis including:
+            1. Data Quality Assessment
+            2. Feature Engineering Suggestions
+            3. Preprocessing Recommendations
+            4. Modeling Approach
+            5. Potential Challenges and Solutions
+
+            Format the response with markdown headings and bullet points.
+            """
 
             try:
-                # Preprocess data
-                X, y, preprocessing_info, encoders = preprocess_dataset(
-                    df, target_column, task_type
-                )
-
-                # Split data
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y if task_type == 'classification' else None
-                )
-
-                # Calculate feature importance
-                feature_importance = calculate_feature_importance(
-                    X, y, task_type
-                )
-
-                # Train and evaluate models
-                results = {}
-                if task_type == 'classification':
-                    models = {
-                        'random_forest': RandomForestClassifier(
-                            n_estimators=100,
-                            max_depth=None,
-                            min_samples_split=2,
-                            min_samples_leaf=1,
-                            random_state=42
-                        ),
-                        'gradient_boosting': GradientBoostingClassifier(
-                            n_estimators=100,
-                            learning_rate=0.1,
-                            max_depth=3,
-                            random_state=42
-                        )
-                    }
-                    
-                    for name, model in models.items():
-                        # Train model
-                        model.fit(X_train, y_train)
-                        
-                        # Get predictions
-                        y_pred = model.predict(X_test)
-                        
-                        # Calculate metrics
-                        metrics = {
-                            'accuracy': float(accuracy_score(y_test, y_pred)),
-                            'precision': float(precision_score(y_test, y_pred, average='weighted')),
-                            'recall': float(recall_score(y_test, y_pred, average='weighted')),
-                            'f1': float(f1_score(y_test, y_pred, average='weighted')),
-                            'feature_importance': dict(zip(X.columns, model.feature_importances_))
-                        }
-                        
-                        # Add cross-validation scores
-                        cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
-                        metrics['cv_score_mean'] = float(cv_scores.mean())
-                        metrics['cv_score_std'] = float(cv_scores.std())
-                        
-                        results[name] = metrics
-                else:
-                    models = {
-                        'random_forest': RandomForestRegressor(
-                            n_estimators=100,
-                            max_depth=None,
-                            min_samples_split=2,
-                            min_samples_leaf=1,
-                            random_state=42
-                        ),
-                        'gradient_boosting': GradientBoostingRegressor(
-                            n_estimators=100,
-                            learning_rate=0.1,
-                            max_depth=3,
-                            random_state=42
-                        )
-                    }
-                    
-                    for name, model in models.items():
-                        # Train model
-                        model.fit(X_train, y_train)
-                        
-                        # Get predictions
-                        y_pred = model.predict(X_test)
-                        
-                        # Calculate metrics
-                        mse = mean_squared_error(y_test, y_pred)
-                        metrics = {
-                            'rmse': float(np.sqrt(mse)),
-                            'r2': float(r2_score(y_test, y_pred)),
-                            'feature_importance': dict(zip(X.columns, model.feature_importances_))
-                        }
-                        
-                        # Add cross-validation scores
-                        cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
-                        metrics['cv_score_mean'] = float(cv_scores.mean())
-                        metrics['cv_score_std'] = float(cv_scores.std())
-                        
-                        results[name] = metrics
-
-                # Save report
-                report_data = {
-                    'user_id': current_user.id,
-                    'username': current_user.username,
-                    'file_id': file_id,
-                    'eda_results': perform_enhanced_eda(df, target_column),
-                    'preprocessing_info': preprocessing_info,
-                    'feature_importance': feature_importance,
-                    'results': results,
-                    'created_at': datetime.utcnow(),
-                    'status': 'completed',
-                    'task_type': task_type,
-                    'target_column': target_column,
-                    'parameters': {
-                        'test_size': 0.2,
-                        'cv_folds': 5,
-                        'n_estimators': 100
-                    }
-                }
+                # Get Gemini response
+                response = model.generate_content(prompt)
                 
-                report_id = mongo_db.model_reports.insert_one(report_data)
-
                 return jsonify({
                     'success': True,
-                    'report_id': str(report_id.inserted_id),
-                    'results': results,
-                    'preprocessing_info': preprocessing_info,
-                    'feature_importance': feature_importance,
-                    'message': 'Models trained successfully.'
+                    'analysis': response.text
                 })
 
             except Exception as e:
+                current_app.logger.error(f"Gemini API error: {str(e)}")
                 return jsonify({
                     'success': False,
-                    'error': str(e)
-                }), 400
+                    'error': 'Error generating AI analysis'
+                }), 500
 
     except Exception as e:
-        app.logger.error(f"Training error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"AI analysis error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }), 500
+        pass
+
+@app.route('/ai/model_insights/<report_id>')
+@login_required
+@async_route
+async def get_model_insights(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Structure the model results for analysis
+            model_summary = {
+                'task_type': report['task_type'],
+                'target_column': report['target_column'],
+                'models': report['results'],
+                'preprocessing': report['preprocessing_info'],
+                'feature_importance': report.get('feature_importance', {})
+            }
+
+            # Generate prompt for model analysis
+            prompt = f"""
+            Analyze these machine learning model results:
+
+            Task Type: {model_summary['task_type']}
+            Target Column: {model_summary['target_column']}
+
+            Model Performance:
+            {json.dumps(model_summary['models'], indent=2)}
+
+            Preprocessing Steps:
+            {json.dumps(model_summary['preprocessing'], indent=2)}
+
+            Feature Importance:
+            {json.dumps(model_summary['feature_importance'], indent=2)}
+
+            Provide a comprehensive analysis including:
+            1. Model Performance Comparison
+            2. Key Insights about Feature Importance
+            3. Potential Areas for Improvement
+            4. Cross-validation Stability Analysis
+            5. Recommendations for Model Optimization
+
+            Format your response with clear sections using markdown.
+            """
+
+            try:
+                # Get Gemini response
+                response = model.generate_content(prompt)
+                
+                return jsonify({
+                    'success': True,
+                    'insights': response.text
+                })
+
+            except Exception as e:
+                current_app.logger.error(f"Gemini API error: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Error generating model insights'
+                }), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Model insights error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }), 500
+        pass
+
+@app.route('/ai/feature_recommendations/<file_id>')
+@login_required
+@async_route
+async def get_feature_recommendations(file_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'File not found'}), 404
+
+            # Load data
+            df = pd.read_csv(file_info['filepath'])
+            
+            # Analyze dataset characteristics
+            numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+            categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+            
+            # Calculate correlations for numeric columns
+            correlations = {}
+            if len(numeric_cols) > 1:
+                corr_matrix = df[numeric_cols].corr()
+                correlations = corr_matrix.to_dict()
+
+            # Create dataset summary
+            dataset_summary = {
+                'task_type': file_info['task_type'],
+                'target_column': file_info['target_column'],
+                'numeric_features': numeric_cols,
+                'categorical_features': categorical_cols,
+                'correlations': correlations
+            }
+
+            # Generate recommendations prompt
+            prompt = f"""
+            Generate feature engineering recommendations for this dataset:
+
+            Dataset Summary:
+            - Task Type: {dataset_summary['task_type']}
+            - Target Column: {dataset_summary['target_column']}
+            - Numeric Features: {', '.join(dataset_summary['numeric_features'])}
+            - Categorical Features: {', '.join(dataset_summary['categorical_features'])}
+
+            Given this information, provide specific feature engineering recommendations including:
+            1. Feature transformations (e.g., scaling, normalization)
+            2. Feature interactions that might be meaningful
+            3. Dimensionality reduction if needed
+            4. Handling of categorical variables
+            5. Creation of new derived features
+            6. Feature selection strategies
+
+            Format your response with clear sections and specific examples.
+            """
+
+            try:
+                # Get Gemini response
+                response = model.generate_content(prompt)
+                
+                return jsonify({
+                    'success': True,
+                    'recommendations': response.text
+                })
+
+            except Exception as e:
+                current_app.logger.error(f"Gemini API error: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Error generating feature recommendations'
+                }), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Feature recommendations error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }), 500
+        pass
+
+
 
 @app.route('/delete_dataset/<file_id>', methods=['POST'])
 @login_required
