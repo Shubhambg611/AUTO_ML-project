@@ -6,6 +6,22 @@
     <title>Model Report - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .prose {
+            max-width: 100%;
+            line-height: 1.6;
+        }
+        .prose h1, .prose h2, .prose h3 {
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+        .prose ul, .prose ol {
+            margin-left: 1.5em;
+            margin-bottom: 1em;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
@@ -27,10 +43,10 @@
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-2xl font-bold mb-6">Model Training Report</h2>
 
-            <!-- Basic Information -->
+            <!-- Task Information -->
             <div class="mb-8">
                 <h3 class="text-lg font-semibold mb-4">Task Information</h3>
-                <div class="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
+                <div class="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
                     <div>
                         <p><span class="font-semibold">Task Type:</span> {{ report.task_type|title }}</p>
                         <p><span class="font-semibold">Target Column:</span> {{ report.target_column }}</p>
@@ -40,6 +56,21 @@
                         <p><span class="font-semibold">Created:</span> {{ report.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                     </div>
                 </div>
+            </div>
+
+            <!-- AI Model Insights Button -->
+            <div class="mb-8">
+                <button id="insightsButton" 
+                        onclick="getModelInsights('{{ report._id }}')"
+                        class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                    Get AI Model Insights
+                </button>
+            </div>
+
+            <!-- AI Insights Section -->
+            <div id="aiInsightsSection" class="mb-8 hidden">
+                <h3 class="text-lg font-semibold mb-4">AI Model Insights</h3>
+                <div id="aiInsightsContent" class="bg-gray-50 p-4 rounded prose"></div>
             </div>
 
             <!-- Model Performance Summary -->
@@ -100,7 +131,7 @@
                 </div>
             </div>
 
-            <!-- Preprocessing Information -->
+            <!-- Preprocessing Steps -->
             {% if report.preprocessing_info and report.preprocessing_info.steps_taken %}
             <div class="mb-8">
                 <h3 class="text-lg font-semibold mb-4">Preprocessing Steps</h3>
@@ -118,18 +149,7 @@
             {% if report.feature_importance and report.feature_importance.aggregate_ranks %}
             <div class="mb-8">
                 <h3 class="text-lg font-semibold mb-4">Feature Importance</h3>
-                <div class="bg-gray-50 p-4 rounded">
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {% for feature, importance in report.feature_importance.aggregate_ranks|dictsort(by='value', reverse=true) %}
-                            <div class="bg-white p-3 rounded shadow">
-                                <p class="text-sm truncate" title="{{ feature }}">
-                                    <span class="font-medium">{{ feature }}:</span>
-                                    <span class="text-gray-600">{{ "%.4f"|format(importance) }}</span>
-                                </p>
-                            </div>
-                        {% endfor %}
-                    </div>
-                </div>
+                <div id="featureImportancePlot" class="h-96 bg-gray-50 rounded p-4"></div>
             </div>
             {% endif %}
 
@@ -142,18 +162,18 @@
                         <div>
                             <h4 class="font-medium mb-2">Distribution Statistics</h4>
                             {% set target = report.eda_results.target_analysis %}
-                            <p><span class="text-gray-600">Type:</span> {{ target.type|title }}</p>
-                            <p><span class="text-gray-600">Unique Values:</span> {{ target.unique_count }}</p>
+                            <p class="mb-1"><span class="text-gray-600">Type:</span> {{ target.type|title }}</p>
+                            <p class="mb-1"><span class="text-gray-600">Unique Values:</span> {{ target.unique_count }}</p>
                             {% if target.type == 'numeric' %}
-                                <p><span class="text-gray-600">Mean:</span> {{ "%.4f"|format(target.mean) }}</p>
-                                <p><span class="text-gray-600">Standard Deviation:</span> {{ "%.4f"|format(target.std) }}</p>
+                                <p class="mb-1"><span class="text-gray-600">Mean:</span> {{ "%.4f"|format(target.mean) }}</p>
+                                <p class="mb-1"><span class="text-gray-600">Standard Deviation:</span> {{ "%.4f"|format(target.std) }}</p>
                             {% endif %}
                         </div>
                         {% if target.type == 'categorical' and target.value_counts %}
                         <div>
                             <h4 class="font-medium mb-2">Class Distribution</h4>
                             {% for class, count in target.value_counts.items() %}
-                                <p><span class="text-gray-600">{{ class }}:</span> {{ count }}</p>
+                                <p class="mb-1"><span class="text-gray-600">{{ class }}:</span> {{ count }}</p>
                             {% endfor %}
                         </div>
                         {% endif %}
@@ -177,17 +197,82 @@
     </div>
 
     <script>
-        // Add any additional JavaScript for interactivity here
-        document.addEventListener('DOMContentLoaded', function() {
-            // Example: Add hover effects on metric cards
-            const metricCards = document.querySelectorAll('.shadow');
-            metricCards.forEach(card => {
-                card.addEventListener('mouseover', () => {
-                    card.classList.add('shadow-lg');
-                });
-                card.addEventListener('mouseout', () => {
-                    card.classList.remove('shadow-lg');
-                });
+        // Feature Importance Plot
+        {% if report.feature_importance and report.feature_importance.aggregate_ranks %}
+            const featureImportance = {{ report.feature_importance.aggregate_ranks|tojson }};
+            const features = Object.keys(featureImportance);
+            const importance = Object.values(featureImportance);
+
+            const data = [{
+                type: 'bar',
+                x: features,
+                y: importance,
+                marker: {
+                    color: 'rgb(79, 70, 229)'
+                }
+            }];
+
+            const layout = {
+                title: 'Feature Importance',
+                font: { size: 12 },
+                xaxis: {
+                    tickangle: -45,
+                    title: 'Features'
+                },
+                yaxis: {
+                    title: 'Importance Score'
+                },
+                margin: {
+                    l: 50,
+                    r: 50,
+                    b: 100,
+                    t: 50,
+                    pad: 4
+                }
+            };
+
+            Plotly.newPlot('featureImportancePlot', data, layout, {responsive: true});
+        {% endif %}
+
+        // Get AI Model Insights
+        async function getModelInsights(reportId) {
+            try {
+                // Show loading state
+                const button = document.getElementById('insightsButton');
+                button.disabled = true;
+                button.innerHTML = 'Loading Insights...';
+
+                const response = await fetch(`/ai/model_insights/${reportId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    // Show insights section
+                    const insightsSection = document.getElementById('aiInsightsSection');
+                    const insightsContent = document.getElementById('aiInsightsContent');
+                    
+                    insightsSection.classList.remove('hidden');
+                    insightsContent.innerHTML = marked.parse(data.insights);
+                    
+                    // Scroll to insights
+                    insightsSection.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    throw new Error(data.error || 'Failed to get insights');
+                }
+            } catch (error) {
+                console.error('Model insights error:', error);
+                alert(`Error getting model insights: ${error.message}`);
+            } finally {
+                // Reset button state
+                const button = document.getElementById('insightsButton');
+                button.disabled = false;
+                button.innerHTML = 'Get AI Model Insights';
+            }
+        }
+
+        // Handle window resize for plots
+        window.addEventListener('resize', function() {
+            Plotly.relayout('featureImportancePlot', {
+                width: document.getElementById('featureImportancePlot').offsetWidth
             });
         });
     </script>

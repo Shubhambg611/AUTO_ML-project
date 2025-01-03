@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>View Dataset - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
-    <nav class="bg-white shadow-lg mb-6">
+    <nav class="bg-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between h-16">
-                <div class="flex-shrink-0 flex items-center">
-                    <a href="/" class="text-xl font-bold text-gray-800">AutoML Platform</a>
+                <div class="flex items-center">
+                    <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:text-blue-800">Dashboard</a>
@@ -22,124 +23,224 @@
         </div>
     </nav>
 
-    <div class="container mx-auto px-4">
-        <!-- Dataset Information -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-2xl font-bold mb-4">Dataset Information</h2>
-            <div class="grid md:grid-cols-2 gap-4">
-                <div>
-                    <p><span class="font-semibold">Filename:</span> {{ file_info.filename }}</p>
-                    <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
-                    <p><span class="font-semibold">Target Column:</span> {{ file_info.target_column }}</p>
-                </div>
-                <div>
-                    <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-                    <p><span class="font-semibold">Rows:</span> {{ shape[0] }}</p>
-                    <p><span class="font-semibold">Columns:</span> {{ shape[1] }}</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Past Model Results -->
-        {% if past_reports %}
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-2xl font-bold mb-4">Past Training Results</h2>
-            {% for report in past_reports %}
-                <div class="mb-6 last:mb-0">
-                    <h3 class="text-lg font-semibold mb-2">Training Run - {{ report.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</h3>
-                    <div class="grid md:grid-cols-2 gap-4">
-                        {% for model_name, results in report.results.items() %}
-                            <div class="bg-gray-50 rounded p-4">
-                                <h4 class="font-semibold text-lg mb-2">{{ model_name|title }}</h4>
-                                {% if file_info.task_type == 'classification' %}
-                                    <p><span class="font-semibold">Accuracy:</span> {{ "%.2f"|format(results.accuracy * 100) }}%</p>
-                                    <p><span class="font-semibold">Precision:</span> {{ "%.2f"|format(results.precision * 100) }}%</p>
-                                    <p><span class="font-semibold">Recall:</span> {{ "%.2f"|format(results.recall * 100) }}%</p>
-                                    <p><span class="font-semibold">F1 Score:</span> {{ "%.2f"|format(results.f1 * 100) }}%</p>
-                                {% else %}
-                                    <p><span class="font-semibold">RMSE:</span> {{ "%.4f"|format(results.rmse) }}</p>
-                                    <p><span class="font-semibold">R² Score:</span> {{ "%.4f"|format(results.r2) }}</p>
-                                {% endif %}
-                                <p><span class="font-semibold">Cross-Validation Score:</span> 
-                                   {{ "%.2f"|format(results.cv_score_mean * 100) }}% (±{{ "%.2f"|format(results.cv_score_std * 100) }}%)
-                                </p>
-                            </div>
-                        {% endfor %}
-                    </div>
-                    <div class="mt-2">
-                        <a href="{{ url_for('view_report', report_id=report._id) }}" 
-                           class="text-blue-600 hover:text-blue-800">
-                            View Full Report
-                        </a>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <!-- Data Preview -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-2xl font-bold mb-4">Data Preview</h2>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            {% for column in columns %}
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                {{ column }}
-                                <br>
-                                <span class="text-xs text-gray-400">({{ dtypes[column] }})</span>
-                            </th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for row in preview_data %}
-                        <tr>
-                            {% for column in columns %}
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {{ row[column] }}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Column Statistics -->
-        {% if stats %}
+    <div class="container mx-auto px-4 py-8">
         <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-2xl font-bold mb-4">Column Statistics</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {% for column, stat in stats.items() %}
-                <div class="bg-gray-50 p-4 rounded">
-                    <h3 class="font-semibold mb-2">{{ column }}</h3>
-                    <p><span class="font-medium">Mean:</span> {{ "%.2f"|format(stat.mean) }}</p>
-                    <p><span class="font-medium">Std:</span> {{ "%.2f"|format(stat.std) }}</p>
-                    <p><span class="font-medium">Min:</span> {{ "%.2f"|format(stat.min) }}</p>
-                    <p><span class="font-medium">Max:</span> {{ "%.2f"|format(stat.max) }}</p>
+            <!-- Dataset Information -->
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold mb-4">Dataset Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-gray-50 p-4 rounded">
+                        <p><span class="font-semibold">Filename:</span> {{ file_info.filename }}</p>
+                        <p><span class="font-semibold">Task Type:</span> {{ file_info.task_type }}</p>
+                        <p><span class="font-semibold">Target Column:</span> {{ file_info.target_column }}</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <p><span class="font-semibold">Upload Date:</span> {{ file_info.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <p><span class="font-semibold">Rows:</span> {{ shape[0] }}</p>
+                        <p><span class="font-semibold">Columns:</span> {{ shape[1] }}</p>
+                    </div>
                 </div>
-                {% endfor %}
+            </div>
+
+            <!-- AI Analysis Buttons -->
+            <div class="mb-8 flex space-x-4">
+                <button onclick="getAIAnalysis('{{ file_info._id }}')"
+                        class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                    Get AI Analysis
+                </button>
+                <button onclick="getFeatureRecommendations('{{ file_info._id }}')"
+                        class="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">
+                    Get Feature Recommendations
+                </button>
+                <button onclick="generateProfile('{{ file_info._id }}')"
+                        class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    Generate Profile Report
+                </button>
+            </div>
+
+            <!-- AI Analysis Results -->
+            <div id="aiAnalysisSection" class="mb-8 hidden">
+                <h3 class="text-xl font-semibold mb-4">AI Analysis</h3>
+                <div id="aiAnalysisContent" class="bg-gray-50 p-4 rounded prose"></div>
+            </div>
+
+            <!-- Feature Recommendations -->
+            <div id="featureRecommendationsSection" class="mb-8 hidden">
+                <h3 class="text-xl font-semibold mb-4">Feature Recommendations</h3>
+                <div id="featureRecommendationsContent" class="bg-gray-50 p-4 rounded prose"></div>
+            </div>
+
+            <!-- Data Preview -->
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold mb-4">Data Preview</h3>
+                <div class="overflow-x-auto bg-gray-50 rounded">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                {% for column in columns %}
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {{ column }}
+                                    <br>
+                                    <span class="text-xs text-gray-400">({{ dtypes[column] }})</span>
+                                </th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for row in preview_data %}
+                            <tr>
+                                {% for column in columns %}
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {{ row[column] }}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Column Statistics -->
+            {% if stats %}
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold mb-4">Column Statistics</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for column, stat in stats.items() %}
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h4 class="font-semibold mb-2">{{ column }}</h4>
+                        <p><span class="text-gray-600">Mean:</span> {{ "%.2f"|format(stat.mean) }}</p>
+                        <p><span class="text-gray-600">Std:</span> {{ "%.2f"|format(stat.std) }}</p>
+                        <p><span class="text-gray-600">Min:</span> {{ "%.2f"|format(stat.min) }}</p>
+                        <p><span class="text-gray-600">Max:</span> {{ "%.2f"|format(stat.max) }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Past Reports -->
+            {% if past_reports %}
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold mb-4">Past Training Reports</h3>
+                <div class="grid gap-4">
+                    {% for report in past_reports %}
+                    <div class="bg-gray-50 p-4 rounded">
+                        <p><span class="font-semibold">Created:</span> {{ report.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <div class="mt-2">
+                            <a href="{{ url_for('view_report', report_id=report._id) }}"
+                               class="text-blue-600 hover:text-blue-800">
+                                View Report
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Actions -->
+            <div class="flex space-x-4">
+                <button onclick="trainModels('{{ file_info._id }}')"
+                        class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    Train New Models
+                </button>
+                <button onclick="deleteDataset('{{ file_info._id }}')"
+                        class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                    Delete Dataset
+                </button>
             </div>
         </div>
-        {% endif %}
+    </div>
 
-        <!-- Actions -->
-        <div class="mt-6 flex justify-end space-x-4">
-            <button onclick="trainModels('{{ file_info._id }}')" 
-                    class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                Train New Models
-            </button>
-            <button onclick="deleteDataset('{{ file_info._id }}')"
-                    class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
-                Delete Dataset
-            </button>
+    <!-- Modals -->
+    <div id="aiAnalysisModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modalTitle"></h3>
+                <div class="mt-2 px-7 py-3" id="modalContent"></div>
+                <div class="items-center px-4 py-3">
+                    <button id="modalClose" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        Close
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
+        async function getAIAnalysis(fileId) {
+            try {
+                // Show loading state
+                const button = document.querySelector('button[onclick="getAIAnalysis(\'' + fileId + '\')"]');
+                button.disabled = true;
+                button.innerHTML = 'Loading Analysis...';
+        
+                const response = await fetch(`/ai/analyze_data/${fileId}`);
+                const data = await response.json();
+        
+                if (data.success) {
+                    // Show analysis section
+                    const analysisSection = document.getElementById('aiAnalysisSection');
+                    const analysisContent = document.getElementById('aiAnalysisContent');
+                    
+                    analysisSection.classList.remove('hidden');
+                    analysisContent.innerHTML = marked.parse(data.analysis);
+                    
+                    // Scroll to analysis
+                    analysisSection.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+            } catch (error) {
+                console.error('AI analysis error:', error);
+                alert(`Error getting AI analysis: ${error.message}`);
+            } finally {
+                // Reset button state
+                const button = document.querySelector('button[onclick="getAIAnalysis(\'' + fileId + '\')"]');
+                button.disabled = false;
+                button.innerHTML = 'Get AI Analysis';
+            }
+        }
+
+        async function getFeatureRecommendations(fileId) {
+            try {
+                // Show loading state
+                const button = document.querySelector('button[onclick="getFeatureRecommendations(\'' + fileId + '\')"]');
+                button.disabled = true;
+                button.innerHTML = 'Loading Recommendations...';
+        
+                const response = await fetch(`/ai/feature_recommendations/${fileId}`);
+                const data = await response.json();
+        
+                if (data.success) {
+                    // Show recommendations section
+                    const recommendationsSection = document.getElementById('featureRecommendationsSection');
+                    const recommendationsContent = document.getElementById('featureRecommendationsContent');
+                    
+                    recommendationsSection.classList.remove('hidden');
+                    recommendationsContent.innerHTML = marked.parse(data.recommendations);
+                    
+                    // Scroll to recommendations
+                    recommendationsSection.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    throw new Error(data.error || 'Failed to get recommendations');
+                }
+            } catch (error) {
+                console.error('Feature recommendations error:', error);
+                alert(`Error getting feature recommendations: ${error.message}`);
+            } finally {
+                // Reset button state
+                const button = document.querySelector('button[onclick="getFeatureRecommendations(\'' + fileId + '\')"]');
+                button.disabled = false;
+                button.innerHTML = 'Get Feature Recommendations';
+            }
+        }
+
+        function generateProfile(fileId) {
+            window.open(`/generate_profile/${fileId}`, '_blank');
+        }
+
         function trainModels(fileId) {
             window.location.href = `/train/${fileId}`;
         }
@@ -149,6 +250,7 @@
                 fetch(`/delete_dataset/${fileId}`, {
                     method: 'POST',
                     headers: {
+                        'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token() }}'
                     },
                     credentials: 'same-origin'
@@ -167,6 +269,23 @@
                 });
             }
         }
+
+        // Modal handling
+        const modal = document.getElementById('aiAnalysisModal');
+        const modalClose = document.getElementById('modalClose');
+        
+        modalClose.onclick = function() {
+            modal.classList.add('hidden');
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.classList.add('hidden');
+            }
+        }
     </script>
+    
+    <!-- Include marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </body>
 </html>
