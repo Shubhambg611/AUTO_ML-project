@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}AutoML Platform{% endblock %}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-100">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{{ url_for('dashboard') }}" class="text-xl font-bold text-gray-800">AutoML Platform</a>
+                </div>
+                {% if current_user.is_authenticated %}
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-700">Welcome, {{ current_user.username }}!</span>
+                    <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container mx-auto px-4 py-2">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Common Scripts -->
+    <script>
+        const csrf_token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        
+        async function fetchWithCSRF(url, options = {}) {
+            const defaultOptions = {
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrf_token,
+                    'Content-Type': 'application/json'
+                }
+            };
+            return fetch(url, { ...defaultOptions, ...options });
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
