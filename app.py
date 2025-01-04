@@ -645,11 +645,52 @@ async def train_model(file_id):
                 'results': results,
                 'message': 'Models trained successfully.'
             })
+            dashboard_data = {
+            'best_model': {
+                'name': best_model_name,
+                'accuracy': float(results[best_model_name]['accuracy']),
+                'precision': float(results[best_model_name]['precision']),
+                'recall': float(results[best_model_name]['recall']),
+                'f1': float(results[best_model_name]['f1'])
+            },
+            'feature_count': len(X.columns),
+            'training_time': training_end_time - training_start_time,
+            'cv_score': float(results[best_model_name]['cv_score_mean']),
+            'model_comparison': [
+                {
+                    'name': model_name,
+                    'accuracy': float(metrics['accuracy']),
+                    'precision': float(metrics['precision']),
+                    'recall': float(metrics['recall'])
+                }
+                for model_name, metrics in results.items()
+            ],
+            'performance_timeline': [
+                {
+                    'name': f'Fold {i+1}',
+                    'accuracy': float(fold_scores[i]),
+                    'precision': float(fold_precisions[i])
+                }
+                for i in range(len(fold_scores))
+            ]
+        }
+
+        # Update report with dashboard data
+        report_data['dashboard_data'] = dashboard_data
+
+        return jsonify({
+            'success': True,
+            'report_id': str(report_id.inserted_id),
+            'results': results,
+            'dashboard_data': dashboard_data,
+            'message': 'Models trained successfully.'
+        })
 
     except Exception as e:
         app.logger.error(f"Training error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+
+
 from ai_assistant import AIAssistant
 
 # Initialize AI Assistant
