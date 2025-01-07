@@ -13,7 +13,28 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 from asgiref.sync import async_to_sync
 from functools import wraps
 import joblib
-
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.preprocessing import StandardScaler, RobustScaler, PowerTransformer
+from sklearn.feature_selection import SelectKBest, mutual_info_classif, mutual_info_regression
+from sklearn.metrics import make_scorer, accuracy_score, f1_score, mean_squared_error, r2_score
+import optuna
+from typing import Dict, List, Any, Optional, Tuple
+import logging
+import google.generativeai as genai
+from datetime import datetime
+from sklearn.metrics import (
+    accuracy_score, 
+    precision_score, 
+    recall_score, 
+    f1_score, 
+    mean_squared_error,
+    mean_absolute_error,  # Added this
+    r2_score
+)
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+import numpy as np
 # Werkzeug utilities
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -64,6 +85,18 @@ import scipy.stats as stats
 from ai_assistant import AIAssistant
 import google.generativeai as genai
 from flask import current_app
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.preprocessing import StandardScaler, RobustScaler, PowerTransformer
+from sklearn.feature_selection import SelectKBest, mutual_info_classif, mutual_info_regression
+from sklearn.metrics import make_scorer, accuracy_score, f1_score, mean_squared_error, r2_score
+import optuna
+from typing import Dict, List, Any, Optional, Tuple
+import logging
+import google.generativeai as genai
+from datetime import datetime
 
 # Initialize Gemini at the start of app.py
 GOOGLE_API_KEY = 'AIzaSyCMemd6wrMxIzEsbhbYajJY0-ee5wXBrcw'
@@ -132,7 +165,134 @@ class User(UserMixin):
 
     def get_id(self):
         return str(self.id)
+class RobustClassificationPipeline:
+    def __init__(self, df, target_column='Failure Type'):
+        self.df = df.copy()
+        self.target_column = target_column
+        self.label_encoders = {}
+        self.logger = logging.getLogger(__name__)
+        
+    def preprocess_data(self):
+        """Preprocess data with robust type handling"""
+        try:
+            # 1. Handle mixed data types
+            for column in self.df.columns:
+                if column == self.target_column:
+                    continue
+                    
+                # Check if column contains machine IDs (starts with 'M')
+                if self.df[column].dtype == 'object' and self.df[column].str.startswith('M').any():
+                    # Encode machine IDs as categories
+                    self.label_encoders[column] = LabelEncoder()
+                    self.df[column] = self.label_encoders[column].fit_transform(self.df[column])
+                    self.logger.info(f"Encoded machine IDs in column: {column}")
+                    
+                elif self.df[column].dtype == 'object':
+                    try:
+                        # Try converting to numeric if possible
+                        self.df[column] = pd.to_numeric(self.df[column], errors='raise')
+                        self.logger.info(f"Converted {column} to numeric")
+                    except ValueError:
+                        # If conversion fails, use label encoding
+                        self.label_encoders[column] = LabelEncoder()
+                        self.df[column] = self.label_encoders[column].fit_transform(self.df[column])
+                        self.logger.info(f"Label encoded column: {column}")
+            
+            # 2. Handle missing values
+            numeric_columns = self.df.select_dtypes(include=['int64', 'float64']).columns
+            for col in numeric_columns:
+                self.df[col] = self.df[col].fillna(self.df[col].median())
+            
+            # 3. Prepare features and target
+            X = self.df.drop(columns=[self.target_column])
+            y = self.df[self.target_column]
+            
+            # 4. Encode target variable
+            if y.dtype == 'object':
+                self.label_encoders['target'] = LabelEncoder()
+                y = self.label_encoders['target'].fit_transform(y)
+            
+            # 5. Scale numeric features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            X_scaled = pd.DataFrame(X_scaled, columns=X.columns)
+            
+            return X_scaled, y
+            
+        except Exception as e:
+            self.logger.error(f"Preprocessing error: {str(e)}")
+            raise
 
+    def train_model(self):
+        """Train classification model with error handling"""
+        try:
+            # 1. Preprocess data
+            X, y = self.preprocess_data()
+            
+            # 2. Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+            
+            # 3. Train model
+            model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=None,
+                min_samples_split=2,
+                min_samples_leaf=1,
+                random_state=42
+            )
+            
+            model.fit(X_train, y_train)
+            
+            # 4. Get predictions
+            y_pred = model.predict(X_test)
+            
+            # 5. Calculate metrics
+            metrics = {
+                'train_score': model.score(X_train, y_train),
+                'test_score': model.score(X_test, y_test),
+                'feature_importance': dict(zip(X.columns, model.feature_importances_))
+            }
+            
+            # 6. Save encoders for prediction pipeline
+            self.model = model
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Training error: {str(e)}")
+            raise
+
+def process_maintenance_data(filepath):
+    """Process predictive maintenance dataset"""
+    try:
+        # 1. Load data with proper encoding
+        df = pd.read_csv(filepath)
+        
+        # 2. Validate required columns
+        required_columns = ['Failure Type']  # Add other required columns
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+            
+        # 3. Create and run pipeline
+        pipeline = RobustClassificationPipeline(df)
+        results = pipeline.train_model()
+        
+        return {
+            'success': True,
+            'model': pipeline.model,
+            'encoders': pipeline.label_encoders,
+            'metrics': results
+        }
+        
+    except Exception as e:
+        logging.error(f"Failed to process maintenance data: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
 @login_manager.user_loader
 def load_user(user_id):
     try:
@@ -145,6 +305,400 @@ def load_user(user_id):
         app.logger.error(f"Error loading user: {e}")
         return None
 
+
+class EnhancedModelTraining:
+    def __init__(self, api_key: str):
+        self.genai = genai
+        self.genai.configure(api_key=api_key)
+        self.model = self.genai.GenerativeModel('gemini-pro')
+        self.logger = logging.getLogger(__name__)
+        self.best_preprocessing = None
+        self.feature_importance = None
+
+    async def get_optimal_preprocessing(self, df: pd.DataFrame, target_column: str) -> Dict:
+        """Get preprocessing recommendations from Gemini."""
+        try:
+            data_summary = {
+                'shape': df.shape,
+                'dtypes': df.dtypes.astype(str).to_dict(),
+                'missing_values': df.isnull().sum().to_dict(),
+                'numeric_features': df.select_dtypes(include=['int64', 'float64']).columns.tolist(),
+                'categorical_features': df.select_dtypes(include=['object']).columns.tolist()
+            }
+
+            prompt = f"""
+            Analyze this dataset and recommend optimal preprocessing steps:
+            {data_summary}
+
+            Provide specific recommendations for:
+            1. Handling missing values
+            2. Feature scaling method
+            3. Encoding categorical variables
+            4. Feature selection criteria
+            5. Handling outliers
+
+            Return in JSON format:
+            {{
+                "missing_values": {{"method": "", "columns": []}},
+                "scaling": {{"method": "", "columns": []}},
+                "encoding": {{"method": "", "columns": []}},
+                "feature_selection": {{"method": "", "n_features": 0}},
+                "outlier_treatment": {{"method": "", "columns": []}}
+            }}
+            """
+
+            response = self.model.generate_content(prompt)
+            recommendations = eval(response.text)
+            return recommendations
+
+        except Exception as e:
+            self.logger.error(f"Error getting preprocessing recommendations: {str(e)}")
+            return self._get_default_preprocessing(df)
+
+    def _get_default_preprocessing(self, df: pd.DataFrame) -> Dict:
+        """Fallback preprocessing recommendations."""
+        return {
+            'missing_values': {
+                'method': 'mean',
+                'columns': df.columns[df.isnull().any()].tolist()
+            },
+            'scaling': {
+                'method': 'standard',
+                'columns': df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+            },
+            'encoding': {
+                'method': 'label',
+                'columns': df.select_dtypes(include=['object']).columns.tolist()
+            },
+            'feature_selection': {
+                'method': 'mutual_info',
+                'n_features': min(df.shape[1] - 1, 20)
+            },
+            'outlier_treatment': {
+                'method': 'clip',
+                'columns': df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+            }
+        }
+
+    def preprocess_data(self, df: pd.DataFrame, target_column: str, preprocessing_config: Dict) -> Tuple[pd.DataFrame, Dict]:
+        """Apply preprocessing based on recommendations."""
+        df_processed = df.copy()
+        preprocessing_info = {'steps': []}
+
+        # Handle missing values
+        for col in preprocessing_config['missing_values']['columns']:
+            if preprocessing_config['missing_values']['method'] == 'mean':
+                df_processed[col].fillna(df_processed[col].mean(), inplace=True)
+            elif preprocessing_config['missing_values']['method'] == 'median':
+                df_processed[col].fillna(df_processed[col].median(), inplace=True)
+            preprocessing_info['steps'].append(f"Filled missing values in {col}")
+
+        # Scale features
+        numeric_cols = preprocessing_config['scaling']['columns']
+        if preprocessing_config['scaling']['method'] == 'standard':
+            scaler = StandardScaler()
+        elif preprocessing_config['scaling']['method'] == 'robust':
+            scaler = RobustScaler()
+        elif preprocessing_config['scaling']['method'] == 'power':
+            scaler = PowerTransformer()
+        
+        if numeric_cols:
+            df_processed[numeric_cols] = scaler.fit_transform(df_processed[numeric_cols])
+            preprocessing_info['steps'].append(f"Applied {preprocessing_config['scaling']['method']} scaling")
+
+        # Handle outliers
+        if preprocessing_config['outlier_treatment']['method'] == 'clip':
+            for col in preprocessing_config['outlier_treatment']['columns']:
+                Q1 = df_processed[col].quantile(0.25)
+                Q3 = df_processed[col].quantile(0.75)
+                IQR = Q3 - Q1
+                df_processed[col] = df_processed[col].clip(Q1 - 1.5*IQR, Q3 + 1.5*IQR)
+                preprocessing_info['steps'].append(f"Clipped outliers in {col}")
+
+        return df_processed, preprocessing_info
+
+    async def optimize_hyperparameters(self, X: pd.DataFrame, y: pd.Series, task_type: str) -> Dict:
+        """Optimize hyperparameters using Optuna."""
+        def objective(trial):
+            params = {
+                'random_forest': {
+                    'n_estimators': trial.suggest_int('rf_n_estimators', 50, 300),
+                    'max_depth': trial.suggest_int('rf_max_depth', 3, 20),
+                    'min_samples_split': trial.suggest_int('rf_min_samples_split', 2, 20),
+                    'min_samples_leaf': trial.suggest_int('rf_min_samples_leaf', 1, 10)
+                },
+                'xgboost': {
+                    'n_estimators': trial.suggest_int('xgb_n_estimators', 50, 300),
+                    'max_depth': trial.suggest_int('xgb_max_depth', 3, 15),
+                    'learning_rate': trial.suggest_float('xgb_learning_rate', 0.01, 0.3),
+                    'subsample': trial.suggest_float('xgb_subsample', 0.6, 1.0)
+                },
+                'lightgbm': {
+                    'n_estimators': trial.suggest_int('lgb_n_estimators', 50, 300),
+                    'num_leaves': trial.suggest_int('lgb_num_leaves', 20, 100),
+                    'learning_rate': trial.suggest_float('lgb_learning_rate', 0.01, 0.3),
+                    'feature_fraction': trial.suggest_float('lgb_feature_fraction', 0.6, 1.0)
+                }
+            }
+
+            scores = []
+            for model_name, model_params in params.items():
+                if task_type == 'classification':
+                    model = self._get_classifier(model_name, model_params)
+                    score = cross_val_score(model, X, y, cv=5, scoring='f1_weighted').mean()
+                else:
+                    model = self._get_regressor(model_name, model_params)
+                    score = -cross_val_score(model, X, y, cv=5, scoring='neg_root_mean_squared_error').mean()
+                scores.append(score)
+
+            return np.mean(scores)
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=50)
+
+        return {
+            'best_params': study.best_params,
+            'best_score': study.best_value,
+            'optimization_history': [
+                {'trial': t.number, 'score': t.value}
+                for t in study.trials
+            ]
+        }
+
+    def _get_classifier(self, name: str, params: Dict):
+        """Get classifier with specified parameters."""
+        if name == 'random_forest':
+            return RandomForestClassifier(**params)
+        elif name == 'xgboost':
+            return XGBClassifier(**params)
+        elif name == 'lightgbm':
+            return LGBMClassifier(**params)
+
+    def _get_regressor(self, name: str, params: Dict):
+        """Get regressor with specified parameters."""
+        if name == 'random_forest':
+            return RandomForestRegressor(**params)
+        elif name == 'xgboost':
+            return XGBRegressor(**params)
+        elif name == 'lightgbm':
+            return LGBMRegressor(**params)
+
+    def select_features(self, X: pd.DataFrame, y: pd.Series, task_type: str, n_features: int) -> List[str]:
+        """Select most important features."""
+        if task_type == 'classification':
+            selector = SelectKBest(score_func=mutual_info_classif, k=n_features)
+        else:
+            selector = SelectKBest(score_func=mutual_info_regression, k=n_features)
+
+        selector.fit(X, y)
+        feature_scores = dict(zip(X.columns, selector.scores_))
+        self.feature_importance = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        return [feat for feat, _ in self.feature_importance[:n_features]]
+
+    async def train_models(self, df: pd.DataFrame, target_column: str, task_type: str) -> Dict:
+        """Enhanced model training pipeline."""
+        try:
+            # Get preprocessing recommendations
+            preprocessing_config = await self.get_optimal_preprocessing(df, target_column)
+            
+            # Preprocess data
+            df_processed, preprocessing_info = self.preprocess_data(df, target_column, preprocessing_config)
+            
+            # Prepare features and target
+            X = df_processed.drop(columns=[target_column])
+            y = df_processed[target_column]
+            
+            # Select features
+            selected_features = self.select_features(
+                X, y, task_type, 
+                preprocessing_config['feature_selection']['n_features']
+            )
+            X = X[selected_features]
+            
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
+            # Optimize hyperparameters
+            best_params = await self.optimize_hyperparameters(X_train, y_train, task_type)
+            
+            # Train models with optimized parameters
+            models = {}
+            metrics = {}
+            
+            for model_name in ['random_forest', 'xgboost', 'lightgbm']:
+                if task_type == 'classification':
+                    model = self._get_classifier(model_name, best_params['best_params'])
+                else:
+                    model = self._get_regressor(model_name, best_params['best_params'])
+                
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+                
+                models[model_name] = model
+                metrics[model_name] = self._calculate_metrics(y_test, y_pred, task_type)
+
+            return {
+                'models': models,
+                'metrics': metrics,
+                'preprocessing_info': preprocessing_info,
+                'feature_importance': self.feature_importance,
+                'selected_features': selected_features,
+                'hyperparameter_optimization': best_params
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in model training: {str(e)}")
+            raise
+
+    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, task_type: str) -> Dict:
+        """Calculate performance metrics."""
+        if task_type == 'classification':
+            return {
+                'accuracy': float(accuracy_score(y_true, y_pred)),
+                'f1_score': float(f1_score(y_true, y_pred, average='weighted')),
+                'predictions': y_pred.tolist()
+            }
+        else:
+            return {
+                'rmse': float(np.sqrt(mean_squared_error(y_true, y_pred))),
+                'r2_score': float(r2_score(y_true, y_pred)),
+                'predictions': y_pred.tolist()
+            }
+            
+class GeminiModelOptimizer:
+    def __init__(self, model, genai_key):
+        self.genai = genai
+        self.genai.configure(api_key=genai_key)
+        self.model = self.genai.GenerativeModel('gemini-pro')
+        
+    async def get_optimal_params(self, df, target_column, task_type, model_name):
+        """Get optimal hyperparameters from Gemini API"""
+        data_summary = {
+            'shape': df.shape,
+            'target_stats': df[target_column].describe().to_dict(),
+            'missing_values': df.isnull().sum().to_dict(),
+            'correlations': df.corr()[target_column].to_dict()
+        }
+        
+        prompt = f"""
+        Given this dataset information:
+        {json.dumps(data_summary, indent=2)}
+        
+        Task Type: {task_type}
+        Model: {model_name}
+        
+        Suggest optimal hyperparameters for best performance.
+        Consider:
+        1. Dataset characteristics
+        2. Target variable distribution
+        3. Feature correlations
+        4. Model-specific requirements
+        
+        Return ONLY a JSON object with parameter names and values. Example:
+        {{
+            "n_estimators": 200,
+            "max_depth": 10,
+            "learning_rate": 0.1
+        }}
+        """
+        
+        try:
+            response = self.model.generate_content(prompt)
+            params = json.loads(response.text)
+            return params
+        except Exception as e:
+            # Fallback to default parameters on error
+            if model_name == 'random_forest':
+                return {'n_estimators': 200, 'max_depth': 15}
+            elif model_name == 'gradient_boosting':
+                return {'n_estimators': 150, 'learning_rate': 0.1}
+            elif model_name == 'xgboost':
+                return {'n_estimators': 200, 'max_depth': 12, 'learning_rate': 0.1}
+            elif model_name == 'lightgbm':
+                return {'n_estimators': 200, 'num_leaves': 31}
+            else:
+                return {'iterations': 200, 'depth': 10}
+
+    async def get_feature_engineering_steps(self, df, target_column):
+        """Get feature engineering recommendations"""
+        data_info = {
+            'columns': list(df.columns),
+            'dtypes': df.dtypes.astype(str).to_dict(),
+            'missing_values': df.isnull().sum().to_dict(),
+            'numeric_stats': df.describe().to_dict(),
+        }
+        
+        prompt = f"""
+        Analyze this dataset and suggest feature engineering steps:
+        {json.dumps(data_info, indent=2)}
+        
+        Target Column: {target_column}
+        
+        Provide ONLY a JSON object with engineering steps. Example:
+        {{
+            "interactions": [["feat1", "feat2"]],
+            "polynomials": ["feat1", "feat2"],
+            "transformations": {{"feat1": "log", "feat2": "sqrt"}},
+            "bin_features": ["feat3"],
+            "groupby_aggregations": [
+                {{"group": "feat4", "agg_column": "feat5", "aggs": ["mean", "std"]}}
+            ]
+        }}
+        """
+        
+        try:
+            response = self.model.generate_content(prompt)
+            steps = json.loads(response.text)
+            return steps
+        except Exception as e:
+            return {
+                'interactions': [],
+                'polynomials': [],
+                'transformations': {},
+                'bin_features': [],
+                'groupby_aggregations': []
+            }
+
+    def apply_feature_engineering(self, df, steps):
+        """Apply recommended feature engineering steps"""
+        df_new = df.copy()
+        
+        # Create interaction features
+        for feat1, feat2 in steps.get('interactions', []):
+            if feat1 in df.columns and feat2 in df.columns:
+                df_new[f'{feat1}_{feat2}_interaction'] = df[feat1] * df[feat2]
+        
+        # Create polynomial features
+        for feat in steps.get('polynomials', []):
+            if feat in df.columns:
+                df_new[f'{feat}_squared'] = df[feat] ** 2
+        
+        # Apply transformations
+        for feat, transform in steps.get('transformations', {}).items():
+            if feat in df.columns:
+                if transform == 'log':
+                    df_new[f'{feat}_log'] = np.log1p(df[feat])
+                elif transform == 'sqrt':
+                    df_new[f'{feat}_sqrt'] = np.sqrt(df[feat])
+        
+        # Create bins
+        for feat in steps.get('bin_features', []):
+            if feat in df.columns:
+                df_new[f'{feat}_bins'] = pd.qcut(df[feat], q=5, labels=False, duplicates='drop')
+        
+        # Groupby aggregations
+        for agg in steps.get('groupby_aggregations', []):
+            group_col = agg['group']
+            agg_col = agg['agg_column']
+            if group_col in df.columns and agg_col in df.columns:
+                for agg_func in agg['aggs']:
+                    col_name = f'{group_col}_{agg_col}_{agg_func}'
+                    df_new[col_name] = df.groupby(group_col)[agg_col].transform(agg_func)
+        
+        return df_new
+            
+            
 def perform_enhanced_eda(df, target_column):
     """Perform comprehensive EDA"""
     # Get missing value information
@@ -554,8 +1108,13 @@ async def generate_profile(file_id):
 @login_required
 @async_route
 async def train_model(file_id):
+    """
+    Route for training machine learning models on uploaded datasets.
+    Handles both GET (display training page) and POST (perform training) requests.
+    """
     try:
         with db_manager.get_mongo_connection() as mongo_db:
+            # Verify file exists and belongs to user
             file_info = mongo_db.uploads.find_one({
                 "_id": ObjectId(file_id),
                 "username": current_user.username
@@ -566,9 +1125,9 @@ async def train_model(file_id):
 
             # Load data
             df = pd.read_csv(file_info['filepath'])
+            target_column = file_info['target_column']
             
             # Auto-detect task type based on target column
-            target_column = file_info['target_column']
             is_categorical = df[target_column].dtype == 'object' or df[target_column].nunique() < 10
             task_type = 'classification' if is_categorical else 'regression'
             
@@ -579,6 +1138,7 @@ async def train_model(file_id):
             )
             file_info['task_type'] = task_type
 
+            # Handle GET request - display training page
             if request.method == 'GET':
                 analysis_result = await ai_assistant.analyze_data(df, target_column, task_type)
                 return render_template(
@@ -587,110 +1147,243 @@ async def train_model(file_id):
                     eda_results=analysis_result['analysis']
                 )
 
-            # Preprocess data with proper encoding for categorical target
-            X, y, preprocessing_info, encoders = preprocess_dataset(
-                df, target_column, task_type
-            )
+            # Start training process
+            app.logger.info(f"Starting model training for file {file_id}")
+            training_start_time = datetime.utcnow()
 
+            # Initialize preprocessing info
+            preprocessing_info = {'steps_taken': []}
+            data = df.copy()
+            categorical_encoders = {}
+
+            # Handle machine IDs and categorical variables
+            for column in data.columns:
+                if column != target_column:
+                    if data[column].dtype == 'object':
+                        if data[column].str.startswith('M').any():
+                            # Handle machine IDs
+                            le = LabelEncoder()
+                            data[column] = le.fit_transform(data[column])
+                            categorical_encoders[column] = le
+                            preprocessing_info['steps_taken'].append(f"Encoded machine IDs in {column}")
+                        else:
+                            # Handle other categorical variables
+                            le = LabelEncoder()
+                            data[column] = le.fit_transform(data[column])
+                            categorical_encoders[column] = le
+                            preprocessing_info['steps_taken'].append(f"Label encoded {column}")
+
+            # Handle missing values
+            for column in data.columns:
+                missing_count = data[column].isnull().sum()
+                if missing_count > 0:
+                    if data[column].dtype in ['int64', 'float64']:
+                        data[column].fillna(data[column].median(), inplace=True)
+                        preprocessing_info['steps_taken'].append(f"Filled missing values in {column} with median")
+                    else:
+                        data[column].fillna(data[column].mode()[0], inplace=True)
+                        preprocessing_info['steps_taken'].append(f"Filled missing values in {column} with mode")
+
+            # Prepare features and target
+            X = data.drop(columns=[target_column])
+            y = data[target_column]
+
+            # Encode target for classification
+            if task_type == 'classification':
+                target_encoder = LabelEncoder()
+                y = target_encoder.fit_transform(y)
+                categorical_encoders['target'] = target_encoder
+
+            # Scale numeric features
+            numeric_columns = X.select_dtypes(include=['int64', 'float64']).columns
+            if len(numeric_columns) > 0:
+                scaler = StandardScaler()
+                X[numeric_columns] = scaler.fit_transform(X[numeric_columns])
+                preprocessing_info['steps_taken'].append("Scaled numeric features")
+
+            # Split data
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42,
                 stratify=y if task_type == 'classification' else None
             )
 
-            results = {}
+            # Initialize models based on task type
             if task_type == 'classification':
                 models = {
                     'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
                     'gradient_boosting': GradientBoostingClassifier(random_state=42),
                     'xgboost': XGBClassifier(random_state=42),
                     'lightgbm': LGBMClassifier(random_state=42),
-                    'catboost': CatBoostClassifier(random_state=42)
+                    'catboost': CatBoostClassifier(random_state=42, verbose=False)
                 }
-                
-                for name, model in models.items():
+            else:
+                models = {
+                    'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
+                    'gradient_boosting': GradientBoostingRegressor(random_state=42),
+                    'xgboost': XGBRegressor(random_state=42),
+                    'lightgbm': LGBMRegressor(random_state=42),
+                    'catboost': CatBoostRegressor(random_state=42, verbose=False)
+                }
+
+            # Train models and collect results
+            results = {}
+            fold_scores = []
+            fold_precisions = []
+
+            for name, model in models.items():
+                try:
+                    app.logger.info(f"Training {name} model...")
                     model.fit(X_train, y_train)
                     y_pred = model.predict(X_test)
                     
-                    metrics = {
-                        'accuracy': float(accuracy_score(y_test, y_pred)),
-                        'precision': float(precision_score(y_test, y_pred, average='weighted')),
-                        'recall': float(recall_score(y_test, y_pred, average='weighted')),
-                        'f1': float(f1_score(y_test, y_pred, average='weighted'))
-                    }
+                    if task_type == 'classification':
+                        metrics = {
+                            'accuracy': float(accuracy_score(y_test, y_pred)),
+                            'precision': float(precision_score(y_test, y_pred, average='weighted')),
+                            'recall': float(recall_score(y_test, y_pred, average='weighted')),
+                            'f1': float(f1_score(y_test, y_pred, average='weighted'))
+                        }
+                        
+                        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                        cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='accuracy')
+                        cv_precisions = cross_val_score(model, X_train, y_train, cv=cv, scoring='precision_weighted')
+                    else:
+                        metrics = {
+                            'rmse': float(np.sqrt(mean_squared_error(y_test, y_pred))),
+                            'mae': float(mean_absolute_error(y_test, y_pred)),
+                            'r2': float(r2_score(y_test, y_pred))
+                        }
+                        
+                        cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='neg_root_mean_squared_error')
                     
-                    cv_scores = cross_val_score(model, X_train, y_train, cv=5)
                     metrics['cv_score_mean'] = float(cv_scores.mean())
                     metrics['cv_score_std'] = float(cv_scores.std())
                     
                     results[name] = metrics
+                    fold_scores.extend(cv_scores)
+                    if task_type == 'classification':
+                        fold_precisions.extend(cv_precisions)
+                    
+                    app.logger.info(f"Successfully trained {name} model")
+                    
+                except Exception as model_error:
+                    app.logger.error(f"Error training {name} model: {str(model_error)}")
+                    continue
 
-            # Save and return results
+            if not results:
+                raise Exception("All models failed to train")
+
+            # Calculate feature importance
+            feature_importance = calculate_feature_importance(X, y, task_type)
+
+            # Find best model
+            if task_type == 'classification':
+                best_model_name = max(results.items(), key=lambda x: x[1]['accuracy'])[0]
+            else:
+                best_model_name = min(results.items(), key=lambda x: x[1]['rmse'])[0]
+
+            # Save best model file
+            model_filepath = os.path.join(
+                app.config['MODELS_FOLDER'],
+                f"{file_id}_{best_model_name}.joblib"
+            )
+            joblib.dump(models[best_model_name], model_filepath)
+
+            # Create performance timeline
+            if task_type == 'classification':
+                performance_timeline = [
+                    {
+                        'name': f'Fold {i+1}',
+                        'accuracy': float(fold_scores[i]),
+                        'precision': float(fold_precisions[i])
+                    }
+                    for i in range(len(fold_scores))
+                ]
+            else:
+                performance_timeline = [
+                    {
+                        'name': f'Fold {i+1}',
+                        'rmse': float(fold_scores[i])
+                    }
+                    for i in range(len(fold_scores))
+                ]
+
+            # Calculate training time
+            training_end_time = datetime.utcnow()
+            training_duration = (training_end_time - training_start_time).total_seconds()
+
+            # Create dashboard data structure
+            dashboard_data = {
+                'best_model': {
+                    'name': best_model_name,
+                    'metrics': results[best_model_name],
+                    'parameters': models[best_model_name].get_params()
+                },
+                'feature_count': len(X.columns),
+                'training_time': training_duration,
+                'cv_score': float(results[best_model_name]['cv_score_mean']),
+                'model_comparison': [
+                    {
+                        'name': model_name,
+                        'metrics': metrics
+                    }
+                    for model_name, metrics in results.items()
+                ],
+                'performance_timeline': performance_timeline,
+                'feature_importance': [
+                    {'feature': feat, 'importance': float(score)}
+                    for feat, score in feature_importance['aggregate_ranks'].items()
+                ]
+            }
+
+            # Create report data
             report_data = {
                 'user_id': current_user.id,
                 'username': current_user.username,
                 'file_id': file_id,
                 'preprocessing_info': preprocessing_info,
+                'feature_importance': feature_importance,
                 'results': results,
-                'created_at': datetime.utcnow(),
+                'model_filepath': model_filepath,
+                'created_at': training_start_time,
+                'completed_at': training_end_time,
+                'training_duration': training_duration,
                 'status': 'completed',
                 'task_type': task_type,
-                'target_column': target_column
+                'target_column': target_column,
+                'dashboard_data': dashboard_data,
+                'best_model': {
+                    'name': best_model_name,
+                    'metrics': results[best_model_name]
+                }
             }
-            
-            report_id = mongo_db.model_reports.insert_one(report_data)
+
+            # Save report to MongoDB
+            report_id = mongo_db.model_reports.insert_one(report_data).inserted_id
+
+            # Update file status
+            mongo_db.uploads.update_one(
+                {"_id": ObjectId(file_id)},
+                {"$set": {
+                    "status": "trained",
+                    "last_training": training_end_time,
+                    "best_model": best_model_name,
+                    "latest_report_id": str(report_id)
+                }}
+            )
 
             return jsonify({
                 'success': True,
-                'report_id': str(report_id.inserted_id),
+                'report_id': str(report_id),
                 'results': results,
-                'message': 'Models trained successfully.'
+                'dashboard_data': dashboard_data,
+                'message': f'Models trained successfully. Best model: {best_model_name}'
             })
-            dashboard_data = {
-            'best_model': {
-                'name': best_model_name,
-                'accuracy': float(results[best_model_name]['accuracy']),
-                'precision': float(results[best_model_name]['precision']),
-                'recall': float(results[best_model_name]['recall']),
-                'f1': float(results[best_model_name]['f1'])
-            },
-            'feature_count': len(X.columns),
-            'training_time': training_end_time - training_start_time,
-            'cv_score': float(results[best_model_name]['cv_score_mean']),
-            'model_comparison': [
-                {
-                    'name': model_name,
-                    'accuracy': float(metrics['accuracy']),
-                    'precision': float(metrics['precision']),
-                    'recall': float(metrics['recall'])
-                }
-                for model_name, metrics in results.items()
-            ],
-            'performance_timeline': [
-                {
-                    'name': f'Fold {i+1}',
-                    'accuracy': float(fold_scores[i]),
-                    'precision': float(fold_precisions[i])
-                }
-                for i in range(len(fold_scores))
-            ]
-        }
-
-        # Update report with dashboard data
-        report_data['dashboard_data'] = dashboard_data
-
-        return jsonify({
-            'success': True,
-            'report_id': str(report_id.inserted_id),
-            'results': results,
-            'dashboard_data': dashboard_data,
-            'message': 'Models trained successfully.'
-        })
 
     except Exception as e:
         app.logger.error(f"Training error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-
+        
 from ai_assistant import AIAssistant
 
 # Initialize AI Assistant
@@ -787,6 +1480,72 @@ async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support 
             'error': f'Server error: {str(e)}'
         }), 500
         pass
+    
+@app.route('/insights/<report_id>')
+@login_required
+@async_route
+async def get_training_insights(report_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            report = mongo_db.model_reports.find_one({
+                "_id": ObjectId(report_id),
+                "username": current_user.username
+            })
+            
+            if not report:
+                return jsonify({'error': 'Report not found'}), 404
+
+            # Format training results for analysis
+            analysis_data = {
+                'best_model': report['best_model'],
+                'feature_importance': report['feature_importance'],
+                'preprocessing_steps': report['preprocessing_info']['steps'],
+                'model_metrics': report['metrics'],
+                'training_duration': report['training_duration'],
+                'optimization_history': report['hyperparameter_optimization']['optimization_history']
+            }
+
+            # Generate prompt for Gemini
+            prompt = f"""
+            Analyze these machine learning training results and provide insights:
+
+            Training Results:
+            {json.dumps(analysis_data, indent=2)}
+
+            Provide insights about:
+            1. Model Performance Analysis
+            2. Feature Importance Interpretation
+            3. Preprocessing Effectiveness
+            4. Optimization Results
+            5. Recommendations for Improvement
+
+            Format your response with markdown.
+            """
+
+            # Get AI insights
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
+            
+            # Save insights to MongoDB
+            mongo_db.model_reports.update_one(
+                {"_id": ObjectId(report_id)},
+                {"$set": {
+                    "ai_insights": response.text,
+                    "insights_generated_at": datetime.utcnow()
+                }}
+            )
+
+            return jsonify({
+                'success': True,
+                'insights': response.text
+            })
+
+    except Exception as e:
+        app.logger.error(f"Error generating insights: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/ai/model_insights/<report_id>')
 @login_required
