@@ -6,6 +6,7 @@
     <title>Model Report - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body class="bg-gray-100">
     <!-- Navigation -->
@@ -167,16 +168,14 @@
     </div>
 
     <!-- Modal -->
-    <div id="modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+    <div id="modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
         <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div class="mt-3">
-                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modalTitle"></h3>
-                <div class="mt-2 px-7 py-3" id="modalContent"></div>
-                <div class="items-center px-4 py-3">
-                    <button id="modalClose" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                        Close
-                    </button>
-                </div>
+            <h3 id="modalTitle" class="text-lg font-bold mb-4"></h3>
+            <div id="modalContent" class="mt-2 text-sm text-gray-600"></div>
+            <div class="mt-4">
+                <button id="modalClose" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    Close
+                </button>
             </div>
         </div>
     </div>
@@ -226,19 +225,27 @@
             document.getElementById('modal').classList.remove('hidden');
         }
 
-        // Modal close button
-        document.getElementById('modalClose').onclick = function() {
-            document.getElementById('modal').classList.add('hidden');
+        // Helper function to show alerts
+        function showAlert(type, message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `fixed top-4 right-4 p-4 rounded ${type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`;
+            alertDiv.textContent = message;
+            document.body.appendChild(alertDiv);
+            setTimeout(() => alertDiv.remove(), 5000);
         }
 
         // Model actions
         async function deployModel(reportId) {
             try {
+                const button = document.querySelector('[onclick*="deployModel"]');
+                button.disabled = true;
+                button.textContent = 'Deploying...';
+                
                 const response = await fetch(`/deploy/${reportId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                        'X-CSRFToken': '{{ csrf_token() }}'
                     },
                     credentials: 'same-origin'
                 });
@@ -246,54 +253,100 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    showModal('Success', `${data.message}<br><br>Deployment ID: ${data.deployment_id}`);
+                    showAlert('success', data.message);
                 } else {
                     throw new Error(data.error || 'Deployment failed');
                 }
             } catch (error) {
-                console.error('Deployment error:', error);
-                showModal('Error', `Failed to deploy model: ${error.message}`);
+                showAlert('error', error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Deploy Model';
             }
         }
 
         async function analyzeErrors(reportId) {
             try {
+                const button = document.querySelector('[onclick*="analyzeErrors"]');
+                button.disabled = true;
+                button.textContent = 'Analyzing...';
+                
                 const response = await fetch(`/analyze/errors/${reportId}`);
                 const data = await response.json();
+                
                 if (data.error) {
                     throw new Error(data.error);
                 }
                 
-                const content = `
+                // Show error analysis in modal
+                const modalContent = `
                     <div class="space-y-4">
-                        <div class="mb-4">
-                            <h4 class="font-semibold mb-2">Error Distribution</h4>
-                            ${Object.entries(data.error_distribution).map(([model, stats]) => `
-                                <div class="mb-2">
-                                    <p class="font-medium">${model}</p>
-                                    <div class="flex items-center">
-                                        <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                            <div class="bg-blue-600 h-2.5 rounded-full" 
-                                                 style="width: ${stats.correct_predictions}%">
-                                            </div>
+                        <h3 class="text-lg font-semibold mb-4">Error Distribution</h3>
+                        ${Object.entries(data.error_distribution).map(([model, stats]) => `
+                            <div class="mb-4">
+                                <p class="font-medium">${model}</p>
+                                <div class="flex items-center">
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div class="bg-blue-600 h-2.5 rounded-full" 
+                                             style="width: ${stats.correct_predictions}%">
                                         </div>
-                                        <span class="ml-2">${stats.correct_predictions.toFixed(2)}% Correct</span>
                                     </div>
+                                    <span class="ml-2">${stats.correct_predictions.toFixed(2)}% Correct</span>
                                 </div>
-                            `).join('')}
-                        </div>
+                            </div>
+                        `).join('')}
                     </div>
                 `;
                 
-                showModal('Error Analysis', content);
+                showModal('Error Analysis', modalContent);
             } catch (error) {
-                console.error('Error analysis error:', error);
-                showModal('Error', `Failed to analyze errors: ${error.message}`);
+                showAlert('error', error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Analyze Errors';
             }
         }
 
-        function downloadReport(reportId) {
-            window.location.href = `/download_report/${reportId}`;
+        async function downloadReport(reportId) {
+            try {
+                const button = document.querySelector('[onclick*="downloadReport"]');
+                button.disabled = true;
+                button.textContent = 'Downloading...';
+                
+                window.location.href = `/download_report/${reportId}`;
+                
+            } catch (error) {
+                showAlert('error', error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Download Report';
+            }
+        }
+
+        async function getModelInsights(reportId) {
+            try {
+                const button = document.querySelector('[onclick*="getModelInsights"]');
+                button.disabled = true;
+                button.textContent = 'Getting Insights...';
+                
+                const response = await fetch(`/ai/model_insights/${reportId}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Show insights in modal
+                document.getElementById('modalTitle').textContent = 'AI Model Insights';
+                document.getElementById('modalContent').innerHTML = marked.parse(data.insights);
+                document.getElementById('modal').classList.remove('hidden');
+                
+            } catch (error) {
+                showAlert('error', error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Get AI Insights';
+            }
         }
 
         function downloadModelPkl(reportId, modelName) {
@@ -310,12 +363,16 @@
         });
 
         // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('modal');
-            if (event.target == modal) {
-                modal.classList.add('hidden');
+        document.getElementById('modal').onclick = function(event) {
+            if (event.target === this) {
+                this.classList.add('hidden');
             }
-        }
+        };
+
+        // Close modal with close button
+        document.getElementById('modalClose').onclick = function() {
+            document.getElementById('modal').classList.add('hidden');
+        };
     </script>
 </body>
 </html>
