@@ -6,6 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}AutoML Platform{% endblock %}</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dist/bundle.js') }}" defer></script>
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-gray-100">
@@ -25,6 +28,7 @@
             </div>
         </div>
     </nav>
+    
 
     <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -57,6 +61,15 @@
                 }
             };
             return fetch(url, { ...defaultOptions, ...options });
+        }
+    </script>
+    <!-- Add before closing body tag -->
+    <div id="chat-root"></div>
+    <script>
+        // Initialize the chat interface
+        const chatRoot = document.getElementById('chat-root');
+        if (chatRoot) {
+            ReactDOM.render(React.createElement(ChatInterface), chatRoot);
         }
     </script>
     {% block extra_js %}{% endblock %}
