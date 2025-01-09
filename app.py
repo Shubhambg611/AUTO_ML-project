@@ -13,6 +13,7 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 from asgiref.sync import async_to_sync
 from functools import wraps
 import joblib
+from flask import jsonify
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
@@ -2094,8 +2095,38 @@ def download_model_pkl(report_id, model_name):
 
     except Exception as e:
         app.logger.error(f"Model download error: {str(e)}")
-        return jsonify({'error': str(e)}), 500    
+        return jsonify({'error': str(e)}), 500   
+     
+@app.route('/ai/chat', methods=['POST'])
+@login_required
+async def chat():
+    try:
+        data = request.get_json()
+        message = data.get('message')
+        
+        if not message:
+            return jsonify({'error': 'No message provided'}), 400
 
-    
+        # Generate response using Gemini
+        try:
+            response = model.generate_content(message)
+            return jsonify({
+                'success': True,
+                'response': response.text
+            })
+        except Exception as e:
+            app.logger.error(f"Gemini API error: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': 'Error generating response'
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Chat error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+        
 if __name__ == '__main__':
     app.run(debug=Config.DEBUG, host='127.0.0.1', port=5000)
