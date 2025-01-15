@@ -38,7 +38,7 @@ class Config:
     # MySQL Configuration
     MYSQL_CONFIG = {
         'user': os.environ.get('MYSQL_USER', 'root'),
-        'password': os.environ.get('MYSQL_PASSWORD', 'Shubham@5050'),
+        'password': os.environ.get('MYSQL_PASSWORD', 'Shubham@001'),
         'host': os.environ.get('MYSQL_HOST', 'localhost'),
         'database': os.environ.get('MYSQL_DB', 'automl_users'),
         'auth_plugin': 'mysql_native_password',

@@ -1787,6 +1787,73 @@ def view_dataset(file_id):
         app.logger.error(f"Error viewing dataset: {e}")
         flash('Error loading dataset', 'error')
         return redirect(url_for('dashboard'))
+    
+@app.route('/download/preprocessed/<file_id>')
+@login_required
+def download_preprocessed_data(file_id):
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                flash('File not found', 'error')
+                return redirect(url_for('dashboard'))
+
+            # Read original file
+            df = pd.read_csv(file_info['filepath'])
+            
+            # Apply preprocessing
+            preprocessed_data = RobustClassificationPipeline(df, file_info['target_column'])
+            X_processed, y = preprocessed_data.preprocess_data()
+            
+            # Combine processed features and target
+            preprocessed_df = pd.concat([X_processed, pd.Series(y, name=file_info['target_column'])], axis=1)
+
+            # Create temporary file for download
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f'preprocessed_{file_info["filename"]}')
+            preprocessed_df.to_csv(temp_path, index=False)
+
+            try:
+                return send_file(
+                    temp_path,
+                    mimetype='text/csv',
+                    as_attachment=True,
+                    download_name=f'preprocessed_{file_info["filename"]}'
+                )
+            finally:
+                # Clean up temporary file after sending
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+    except Exception as e:
+        app.logger.error(f"Download error: {str(e)}")
+        flash(f'Error downloading preprocessed data: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
+
+@app.route('/preprocessing_status/<file_id>')
+@login_required
+def get_preprocessing_status(file_id):
+    """Check preprocessing status"""
+    try:
+        with db_manager.get_mongo_connection() as mongo_db:
+            file_info = mongo_db.uploads.find_one({
+                "_id": ObjectId(file_id),
+                "username": current_user.username
+            })
+            
+            if not file_info:
+                return jsonify({'error': 'File not found'}), 404
+
+            return jsonify({
+                'status': 'completed',
+                'progress': 100
+            })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/get_model_features/<report_id>')
 @login_required
