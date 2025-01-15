@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>View Dataset - AutoML Platform</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -43,7 +44,7 @@
             </div>
 
             <!-- AI Analysis Buttons -->
-            <div class="mb-8 flex space-x-4">
+            <div class="mb-8 flex flex-wrap gap-4">
                 <button onclick="getAIAnalysis('{{ file_info._id }}')"
                         class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                     Get AI Analysis
@@ -55,6 +56,13 @@
                 <button onclick="generateProfile('{{ file_info._id }}')"
                         class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
                     Generate Profile Report
+                </button>
+                <button onclick="downloadPreprocessedData('{{ file_info._id }}')"
+                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                    Download Preprocessed Data
                 </button>
             </div>
 
@@ -153,7 +161,22 @@
         </div>
     </div>
 
-    <!-- Modals -->
+    <!-- Download Progress Modal -->
+    <div id="downloadProgressModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg font-medium text-gray-900">Preparing Download</h3>
+                <div class="mt-4">
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" id="downloadProgress" style="width: 0%"></div>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-2" id="downloadStatus">Processing...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Analysis Modal -->
     <div id="aiAnalysisModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
         <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
             <div class="mt-3 text-center">
@@ -171,7 +194,6 @@
     <script>
         async function getAIAnalysis(fileId) {
             try {
-                // Show loading state
                 const button = document.querySelector('button[onclick="getAIAnalysis(\'' + fileId + '\')"]');
                 button.disabled = true;
                 button.innerHTML = 'Loading Analysis...';
@@ -180,14 +202,12 @@
                 const data = await response.json();
         
                 if (data.success) {
-                    // Show analysis section
                     const analysisSection = document.getElementById('aiAnalysisSection');
                     const analysisContent = document.getElementById('aiAnalysisContent');
                     
                     analysisSection.classList.remove('hidden');
                     analysisContent.innerHTML = marked.parse(data.analysis);
                     
-                    // Scroll to analysis
                     analysisSection.scrollIntoView({ behavior: 'smooth' });
                 } else {
                     throw new Error(data.error || 'Analysis failed');
@@ -196,7 +216,6 @@
                 console.error('AI analysis error:', error);
                 alert(`Error getting AI analysis: ${error.message}`);
             } finally {
-                // Reset button state
                 const button = document.querySelector('button[onclick="getAIAnalysis(\'' + fileId + '\')"]');
                 button.disabled = false;
                 button.innerHTML = 'Get AI Analysis';
@@ -205,7 +224,6 @@
 
         async function getFeatureRecommendations(fileId) {
             try {
-                // Show loading state
                 const button = document.querySelector('button[onclick="getFeatureRecommendations(\'' + fileId + '\')"]');
                 button.disabled = true;
                 button.innerHTML = 'Loading Recommendations...';
@@ -214,14 +232,12 @@
                 const data = await response.json();
         
                 if (data.success) {
-                    // Show recommendations section
                     const recommendationsSection = document.getElementById('featureRecommendationsSection');
                     const recommendationsContent = document.getElementById('featureRecommendationsContent');
                     
                     recommendationsSection.classList.remove('hidden');
                     recommendationsContent.innerHTML = marked.parse(data.recommendations);
                     
-                    // Scroll to recommendations
                     recommendationsSection.scrollIntoView({ behavior: 'smooth' });
                 } else {
                     throw new Error(data.error || 'Failed to get recommendations');
@@ -230,10 +246,37 @@
                 console.error('Feature recommendations error:', error);
                 alert(`Error getting feature recommendations: ${error.message}`);
             } finally {
-                // Reset button state
                 const button = document.querySelector('button[onclick="getFeatureRecommendations(\'' + fileId + '\')"]');
                 button.disabled = false;
                 button.innerHTML = 'Get Feature Recommendations';
+            }
+        }
+
+        async function downloadPreprocessedData(fileId) {
+            try {
+                const button = event.currentTarget;
+                const originalText = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = `
+                    <svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                `;
+                // Direct download
+                window.location.href = `/download/preprocessed/${fileId}`;
+                
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 3000);
+
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Error downloading preprocessed data');
+                button.innerHTML = originalText;
+                button.disabled = false;
             }
         }
 
@@ -273,6 +316,7 @@
         // Modal handling
         const modal = document.getElementById('aiAnalysisModal');
         const modalClose = document.getElementById('modalClose');
+        const downloadModal = document.getElementById('downloadProgressModal');
         
         modalClose.onclick = function() {
             modal.classList.add('hidden');
@@ -281,6 +325,9 @@
         window.onclick = function(event) {
             if (event.target == modal) {
                 modal.classList.add('hidden');
+            }
+            if (event.target == downloadModal) {
+                downloadModal.classList.add('hidden');
             }
         }
     </script>
