@@ -7,4 +7,5 @@ makes ML accessible to non-experts while providing advanced features
 for data scientists through an intuitive interface.
 
 Python 3.10
-![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/63b41939-69d2-4c22-8ff1-b40a645db846)
+![Untitled diagram-2025-01-09-122712](https://github.com/user-attachments/assets/b785b486-c498-4822-abbd-e7dd32577b93)
+![Untitled diagram-2025-01-09-122353](https://github.com/user-attachments/assets/efafde1a-19d4-4cf1-a0ca-397147628f26)
