@@ -1,17 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <!-- Your existing head content -->
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>Dashboard - AutoML Platform</title>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
-        <!-- Update these React scripts -->
         <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
         <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-        <!-- Add your bundled JS -->
         <script src="{{ url_for('static', filename='js/dist/bundle.js') }}" defer></script>
     </head>
 <body class="bg-gray-100">
@@ -19,10 +16,14 @@
     <nav class="bg-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
+                <div class="flex items-center space-x-6">
+                    <div class="flex-shrink-0">
                         <span class="text-xl font-bold text-gray-800">AutoML Platform</span>
                     </div>
+                    <a href="{{ url_for('process_explainer') }}" 
+                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    How It Works
+                    </a>        
                 </div>
                 <div class="flex items-center">
                     <span class="text-gray-700 mr-4">Welcome, {{ username }}!</span>
@@ -36,6 +37,41 @@
 
     <!-- Main Content -->
     <div class="container mx-auto px-4 py-8">
+        <!-- Quick Start Guide -->
+        <div class="bg-blue-50 p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-bold text-blue-800 mb-4">Quick Start Guide</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
+                        <span class="text-blue-600 text-lg">1</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-blue-700">Upload Data</h3>
+                        <p class="text-blue-600">Upload your CSV file below</p>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
+                        <span class="text-blue-600 text-lg">2</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-blue-700">Choose Target</h3>
+                        <p class="text-blue-600">Select what you want to predict</p>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0 bg-blue-100 rounded-full p-2">
+                        <span class="text-blue-600 text-lg">3</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-blue-700">Train Models</h3>
+                        <p class="text-blue-600">Let AI find the best model</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -84,6 +120,10 @@
                             <div>
                                 <label class="block text-gray-700 text-sm font-bold mb-2" for="task_type">
                                     Task Type
+                                    <span class="ml-1 text-sm text-blue-500 cursor-help" 
+                                          title="Classification: Predict categories. Regression: Predict numbers.">
+                                        ℹ️
+                                    </span>
                                 </label>
                                 <select id="task_type" name="task_type" required class="w-full p-2 border rounded">
                                     <option value="classification">Classification</option>
@@ -93,6 +133,10 @@
                             <div>
                                 <label class="block text-gray-700 text-sm font-bold mb-2" for="target_column">
                                     Target Column
+                                    <span class="ml-1 text-sm text-blue-500 cursor-help" 
+                                          title="Select the column you want to predict.">
+                                        ℹ️
+                                    </span>
                                 </label>
                                 <select id="target_column" name="target_column" required class="w-full p-2 border rounded">
                                 </select>

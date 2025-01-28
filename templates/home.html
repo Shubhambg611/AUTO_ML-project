@@ -8,41 +8,46 @@
 </head>
 <body class="bg-gray-100">
     <!-- Navigation Bar -->
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <span class="text-2xl font-bold text-gray-800">AutoML Platform</span>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <a href="{{ url_for('login') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded">
-                        Login
-                    </a>
-                    <a href="{{ url_for('register') }}" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-6 rounded">
-                        Register
-                    </a>
-                </div>
+    <!-- Navigation Section Update -->
+<nav class="bg-white shadow-lg">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="flex justify-between h-16">
+            <div class="flex items-center">
+                <a href="{{ url_for('home') }}" class="text-2xl font-bold text-gray-800">AutoML Platform</a>
             </div>
-        </div>
-    </nav>
-
-    <!-- Hero Section -->
-    <div class="container mx-auto px-4 py-16">
-        <div class="text-center">
-            <h1 class="text-4xl font-bold text-gray-900 mb-8">
-                Welcome to AutoML Platform
-            </h1>
-            <p class="text-xl text-gray-600 mb-12">
-                Automate your machine learning workflow with ease. Upload your data, select your target, and let our platform handle the rest.
-            </p>
-            <div class="space-x-4">
-                <a href="{{ url_for('login') }}" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg">
-                    Get Started
+            <div class="flex items-center space-x-4">
+                <!-- Remove How It Works from nav, since it's a main CTA below -->
+                <a href="{{ url_for('login') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded">
+                    Login
+                </a>
+                <a href="{{ url_for('register') }}" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-6 rounded">
+                    Register
                 </a>
             </div>
         </div>
+    </div>
+</nav>
+
+<!-- Hero Section Update -->
+<div class="container mx-auto px-4 py-16">
+    <div class="text-center">
+        <h1 class="text-4xl font-bold text-gray-900 mb-8">
+            Welcome to AutoML Platform
+        </h1>
+        <p class="text-xl text-gray-600 mb-12">
+            Automate your machine learning workflow with ease. Upload your data, select your target, and let our platform handle the rest.
+        </p>
+        <div class="space-x-4">
+            <a href="{{ url_for('process_explainer') }}" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg">
+                How It Works
+            </a>
+            <a href="{{ url_for('register') }}" class="inline-block bg-green-500 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg">
+                Get Started
+            </a>
+        </div>
+    </div>
+    <!-- Rest of your content remains the same -->
+
 
         <!-- Features Section -->
         <div class="grid md:grid-cols-3 gap-8 mt-16">
@@ -66,24 +71,31 @@
         </div>
 
         <!-- How It Works Section -->
-        <div class="mt-16">
-            <h2 class="text-3xl font-bold text-center mb-8">How It Works</h2>
+        <div class="mt-20">
+            <h2 class="text-3xl font-bold text-center mb-12">How It Works</h2>
             <div class="grid md:grid-cols-4 gap-6">
-                <div class="bg-white p-4 rounded-lg shadow text-center">
-                    <div class="text-xl font-bold mb-2">1</div>
-                    <p class="text-gray-700">Upload your dataset</p>
+                <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xl font-bold mx-auto mb-4">1</div>
+                    <h3 class="font-semibold text-lg mb-2">Upload Data</h3>
+                    <p class="text-gray-600">Upload your CSV dataset with your training data</p>
                 </div>
-                <div class="bg-white p-4 rounded-lg shadow text-center">
-                    <div class="text-xl font-bold mb-2">2</div>
-                    <p class="text-gray-700">Select task type</p>
+
+                <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xl font-bold mx-auto mb-4">2</div>
+                    <h3 class="font-semibold text-lg mb-2">Select Target</h3>
+                    <p class="text-gray-600">Choose what you want to predict from your data</p>
                 </div>
-                <div class="bg-white p-4 rounded-lg shadow text-center">
-                    <div class="text-xl font-bold mb-2">3</div>
-                    <p class="text-gray-700">Configure parameters</p>
+
+                <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                    <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 text-xl font-bold mx-auto mb-4">3</div>
+                    <h3 class="font-semibold text-lg mb-2">Train Models</h3>
+                    <p class="text-gray-600">Our AI trains multiple models on your data</p>
                 </div>
-                <div class="bg-white p-4 rounded-lg shadow text-center">
-                    <div class="text-xl font-bold mb-2">4</div>
-                    <p class="text-gray-700">Get results</p>
+
+                <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                    <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-xl font-bold mx-auto mb-4">4</div>
+                    <h3 class="font-semibold text-lg mb-2">Get Results</h3>
+                    <p class="text-gray-600">Download detailed reports and predictions</p>
                 </div>
             </div>
         </div>
