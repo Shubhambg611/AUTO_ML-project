@@ -39,6 +39,8 @@ import numpy as np
 # Werkzeug utilities
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from utils.user_friendly_utils import UserFriendlyWrapper
+
 
 # Standard library imports
 import os
@@ -1105,6 +1107,11 @@ async def generate_profile(file_id):
         return jsonify({'error': str(e)}), 500
     pass
 
+@app.route('/process-explainer')
+def process_explainer():
+    """Render the process explainer page"""
+    return render_template('process_explainer.html')
+
 @app.route('/train/<file_id>', methods=['GET', 'POST'])
 @login_required
 @async_route
@@ -1481,6 +1488,10 @@ async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support 
             'error': f'Server error: {str(e)}'
         }), 500
         pass
+
+@app.route('/process-explanation')
+def process_explanation():
+    return render_template('includes/process_explainer.html')
     
 @app.route('/insights/<report_id>')
 @login_required
