@@ -1,8 +1,4 @@
-Python 3.10
-![Untitled diagram-2025-01-09-122353](https://github.com/user-attachments/assets/f296f70b-26b7-43a2-b3c3-73a7b662c3fb)
-![Untitled diagram-2025-01-09-122712](https://github.com/user-attachments/assets/c3d65069-8d5b-46a8-8fd6-6b6ca5720c93)
-![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/0a9ccbf4-7890-41cd-a902-acedbd403bff)
-
+Python 3.10![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/5890b0f9-cbba-4ddd-97f7-a951c560a8e7)
 
 # AutoML Platform
 
