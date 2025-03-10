@@ -1,6 +1,8 @@
-Python 3.10![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/5890b0f9-cbba-4ddd-97f7-a951c560a8e7)
+![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/5890b0f9-cbba-4ddd-97f7-a951c560a8e7)
 
 # AutoML Platform
+
+# Python 3.10
 
 An automated machine learning platform that simplifies the ML workflow, from data preprocessing to model deployment. This platform allows users to upload datasets, automatically process them, train multiple models, and get detailed performance analysis - all without writing code.
 
