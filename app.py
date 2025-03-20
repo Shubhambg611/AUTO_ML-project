@@ -1,4 +1,3 @@
-# Flask and related imports
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_wtf.csrf import CSRFProtect
@@ -23,7 +22,6 @@ from sklearn.metrics import make_scorer, accuracy_score, f1_score, mean_squared_
 import optuna
 from typing import Dict, List, Any, Optional, Tuple
 import logging
-import google.generativeai as genai
 from datetime import datetime
 from sklearn.metrics import (
     accuracy_score, 
@@ -86,7 +84,6 @@ from sklearn.feature_selection import mutual_info_classif, mutual_info_regressio
 import scipy.stats as stats
 
 from ai_assistant import AIAssistant
-import google.generativeai as genai
 from flask import current_app
 
 import pandas as pd
@@ -98,14 +95,10 @@ from sklearn.metrics import make_scorer, accuracy_score, f1_score, mean_squared_
 import optuna
 from typing import Dict, List, Any, Optional, Tuple
 import logging
-import google.generativeai as genai
 from datetime import datetime
 
-# Initialize Gemini at the start of app.py
-GOOGLE_API_KEY = 'AIzaSyCMemd6wrMxIzEsbhbYajJY0-ee5wXBrcw'
-genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
-
+from ai_assistant import AIAssistant
+ai_assistant = AIAssistant(api_url="http://localhost:1234/v1")
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -120,6 +113,11 @@ for directory in ['uploads', 'models', 'logs']:
 # Initialize Flask app
 app = Flask(__name__)
 app.config.from_object(Config)
+from ai_assistant import AIAssistant
+
+# Use LM Studio API instead of Hugging Face model
+ai_assistant = AIAssistant(api_url="http://localhost:1234/v1")
+
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
@@ -312,14 +310,16 @@ def load_user(user_id):
 class EnhancedModelTraining:
     def __init__(self, api_key: str):
         self.genai = genai
-        self.genai.configure(api_key=api_key)
-        self.model = self.genai.GenerativeModel('gemini-pro')
+        self.logger = logging.getLogger(__name__)
+        self.best_preprocessing = None
+        self.feature_importance = None
+        self.ai_assistant = AIAssistant()
         self.logger = logging.getLogger(__name__)
         self.best_preprocessing = None
         self.feature_importance = None
 
     async def get_optimal_preprocessing(self, df: pd.DataFrame, target_column: str) -> Dict:
-        """Get preprocessing recommendations from Gemini."""
+        """Get preprocessing recommendations from local AI model."""
         try:
             data_summary = {
                 'shape': df.shape,
@@ -569,35 +569,34 @@ class EnhancedModelTraining:
                 'predictions': y_pred.tolist()
             }
             
-class GeminiModelOptimizer:
-    def __init__(self, model, genai_key):
-        self.genai = genai
-        self.genai.configure(api_key=genai_key)
-        self.model = self.genai.GenerativeModel('gemini-pro')
-        
-    async def get_optimal_params(self, df, target_column, task_type, model_name):
-        """Get optimal hyperparameters from Gemini API"""
+class ModelOptimizer:
+    def __init__(self, model):
+        self.model = model
+        self.ai_assistant = AIAssistant()
+
+    def get_optimal_params(self, df, target_column, task_type, model_name):
+        """Get optimal hyperparameters from local AI model."""
         data_summary = {
             'shape': df.shape,
             'target_stats': df[target_column].describe().to_dict(),
             'missing_values': df.isnull().sum().to_dict(),
             'correlations': df.corr()[target_column].to_dict()
         }
-        
+
         prompt = f"""
         Given this dataset information:
         {json.dumps(data_summary, indent=2)}
-        
+
         Task Type: {task_type}
         Model: {model_name}
-        
+
         Suggest optimal hyperparameters for best performance.
         Consider:
         1. Dataset characteristics
         2. Target variable distribution
         3. Feature correlations
         4. Model-specific requirements
-        
+
         Return ONLY a JSON object with parameter names and values. Example:
         {{
             "n_estimators": 200,
@@ -605,23 +604,21 @@ class GeminiModelOptimizer:
             "learning_rate": 0.1
         }}
         """
-        
+
         try:
-            response = self.model.generate_content(prompt)
-            params = json.loads(response.text)
+            response = self.ai_assistant.generate_response(prompt)  # ✅ Use local LLM instead of Gemini
+            params = json.loads(response)
             return params
         except Exception as e:
             # Fallback to default parameters on error
-            if model_name == 'random_forest':
-                return {'n_estimators': 200, 'max_depth': 15}
-            elif model_name == 'gradient_boosting':
-                return {'n_estimators': 150, 'learning_rate': 0.1}
-            elif model_name == 'xgboost':
-                return {'n_estimators': 200, 'max_depth': 12, 'learning_rate': 0.1}
-            elif model_name == 'lightgbm':
-                return {'n_estimators': 200, 'num_leaves': 31}
-            else:
-                return {'iterations': 200, 'depth': 10}
+            fallback_params = {
+                'random_forest': {'n_estimators': 200, 'max_depth': 15},
+                'gradient_boosting': {'n_estimators': 150, 'learning_rate': 0.1},
+                'xgboost': {'n_estimators': 200, 'max_depth': 12, 'learning_rate': 0.1},
+                'lightgbm': {'n_estimators': 200, 'num_leaves': 31}
+            }
+            return fallback_params.get(model_name, {'iterations': 200, 'depth': 10})
+
 
     async def get_feature_engineering_steps(self, df, target_column):
         """Get feature engineering recommendations"""
@@ -1400,7 +1397,7 @@ ai_assistant = AIAssistant()
 @app.route('/ai/analyze_data/<file_id>')
 @login_required
 @async_route
-async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support it directly
+async def ai_analyze_data(file_id):  # Removed async since Flask doesn't support it directly
     try:
         with db_manager.get_mongo_connection() as mongo_db:
             file_info = mongo_db.uploads.find_one({
@@ -1466,16 +1463,15 @@ async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support 
             """
 
             try:
-                # Get Gemini response
-                response = model.generate_content(prompt)
+                response = ai_assistant.generate_response(prompt)  
                 
                 return jsonify({
                     'success': True,
-                    'analysis': response.text
+                    'analysis': response
                 })
 
             except Exception as e:
-                current_app.logger.error(f"Gemini API error: {str(e)}")
+                current_app.logger.error(f"AI Assistant error: {str(e)}")
                 return jsonify({
                     'success': False,
                     'error': 'Error generating AI analysis'
@@ -1487,7 +1483,7 @@ async def ai_analyze_data(file_id):  # Remove async since Flask doesn't support 
             'success': False,
             'error': f'Server error: {str(e)}'
         }), 500
-        pass
+
 
 @app.route('/process-explanation')
 def process_explanation():
@@ -1517,7 +1513,7 @@ async def get_training_insights(report_id):
                 'optimization_history': report['hyperparameter_optimization']['optimization_history']
             }
 
-            # Generate prompt for Gemini
+            # Generate prompt for local AI assistant
             prompt = f"""
             Analyze these machine learning training results and provide insights:
 
@@ -1534,22 +1530,21 @@ async def get_training_insights(report_id):
             Format your response with markdown.
             """
 
-            # Get AI insights
-            model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content(prompt)
+            # Get AI insights from local model
+            response = ai_assistant.generate_response(prompt)
             
             # Save insights to MongoDB
             mongo_db.model_reports.update_one(
                 {"_id": ObjectId(report_id)},
                 {"$set": {
-                    "ai_insights": response.text,
+                    "ai_insights": response,
                     "insights_generated_at": datetime.utcnow()
                 }}
             )
 
             return jsonify({
                 'success': True,
-                'insights': response.text
+                'insights': response
             })
 
     except Exception as e:
@@ -1609,16 +1604,16 @@ async def get_model_insights(report_id):
             """
 
             try:
-                # Get Gemini response
-                response = model.generate_content(prompt)
+                # Get AI response from local model
+                response = ai_assistant.generate_response(prompt)
                 
                 return jsonify({
                     'success': True,
-                    'insights': response.text
+                    'insights': response
                 })
 
             except Exception as e:
-                current_app.logger.error(f"Gemini API error: {str(e)}")
+                current_app.logger.error(f"AI Assistant error: {str(e)}")
                 return jsonify({
                     'success': False,
                     'error': 'Error generating model insights'
@@ -1630,7 +1625,7 @@ async def get_model_insights(report_id):
             'success': False,
             'error': f'Server error: {str(e)}'
         }), 500
-        pass
+
 
 @app.route('/ai/feature_recommendations/<file_id>')
 @login_required
@@ -1690,16 +1685,16 @@ async def get_feature_recommendations(file_id):
             """
 
             try:
-                # Get Gemini response
-                response = model.generate_content(prompt)
+                # Get AI response from local model
+                response = ai_assistant.generate_response(prompt)
                 
                 return jsonify({
                     'success': True,
-                    'recommendations': response.text
+                    'recommendations': response
                 })
 
             except Exception as e:
-                current_app.logger.error(f"Gemini API error: {str(e)}")
+                current_app.logger.error(f"AI Assistant error: {str(e)}")
                 return jsonify({
                     'success': False,
                     'error': 'Error generating feature recommendations'
@@ -1711,7 +1706,6 @@ async def get_feature_recommendations(file_id):
             'success': False,
             'error': f'Server error: {str(e)}'
         }), 500
-        pass
 
 
 
@@ -2177,7 +2171,7 @@ def download_model_pkl(report_id, model_name):
      
 @app.route('/ai/chat', methods=['POST'])
 @login_required
-async def chat():
+def chat():
     try:
         data = request.get_json()
         message = data.get('message')
@@ -2185,15 +2179,15 @@ async def chat():
         if not message:
             return jsonify({'error': 'No message provided'}), 400
 
-        # Generate response using Gemini
+        # Generate response using local AI model
         try:
-            response = model.generate_content(message)
+            response = ai_assistant.generate_response(message)
             return jsonify({
                 'success': True,
-                'response': response.text
+                'response': response
             })
         except Exception as e:
-            app.logger.error(f"Gemini API error: {str(e)}")
+            app.logger.error(f"AI Assistant error: {str(e)}")
             return jsonify({
                 'success': False,
                 'error': 'Error generating response'

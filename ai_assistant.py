@@ -1,24 +1,50 @@
-import google.generativeai as genai
-from typing import Dict, Any, Optional
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 import json
 import logging
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
+from typing import Dict, Any, Optional
+import requests
+import os
 
-# Configure Gemini
-GOOGLE_API_KEY = 'AIzaSyCMemd6wrMxIzEsbhbYajJY0-ee5wXBrcw'
-genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Check CUDA availability
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")  # Debugging GPU usage
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class AIAssistant:
-    def __init__(self):
-        self.model = model
-    
-    async def analyze_data(self, df: pd.DataFrame, target_column: str, task_type: str) -> Dict:
-        """Perform comprehensive data analysis"""
+    def __init__(self, api_url=None):
+        """Initialize AI Assistant using LM Studio API."""
+        self.api_url = api_url or os.getenv('API_URL', 'http://localhost:1234/v1')
+        self.headers = {"Content-Type": "application/json"}
+
+    def generate_response(self, prompt: str, max_tokens: int = 300):
+        """Generate response using a local LLM via LM Studio API."""
+        data = {
+            "model": "qwen2.5-coder-3b-instruct",  # Example: "mistralai/Mistral-7B"
+            "prompt": prompt,
+            "max_tokens": max_tokens
+        }
+
+        # Log the URL being used
+        logging.info(f"Sending request to API: {self.api_url}")
+
+        response = requests.post(f"{self.api_url}/completions", headers=self.headers, json=data)
+        
+        if response.status_code == 200:
+            return response.json()["choices"][0]["text"].strip()
+        else:
+            return f"Error: {response.json()}"
+
+
+    async def analyze_data(self, df, target_column: str, task_type: str):
+        """Perform local AI-based dataset analysis"""
         try:
+            # Extract dataset info
             dataset_info = {
                 'basic_info': {
                     'rows': len(df),
@@ -46,8 +72,9 @@ class AIAssistant:
                     'max': float(stats['max'])
                 })
 
+            # Generate a structured prompt
             prompt = f"""
-            Analyze this dataset for machine learning:
+            You are an expert data scientist. Analyze this dataset:
 
             Basic Information:
             - Task Type: {task_type}
@@ -58,18 +85,18 @@ class AIAssistant:
             Column Details:
             {json.dumps(dataset_info['columns'], indent=2)}
 
-            Provide:
-            1. Data Quality Assessment
-            2. Feature Engineering Suggestions
-            3. Preprocessing Recommendations
-            4. Modeling Approach
-            5. Potential Challenges
+            Provide insights on:
+            - Data Quality Assessment
+            - Feature Engineering Suggestions
+            - Preprocessing Recommendations
+            - Modeling Approach
+            - Potential Challenges
 
-            Format the response with markdown headings and bullet points.
+            Keep the response **short** but informative. Use bullet points.
             """
-            
-            response = self.model.generate_content(prompt)
-            return {'success': True, 'analysis': response.text}
+
+            response = self.generate_response(prompt)
+            return {'success': True, 'analysis': response}
 
         except Exception as e:
             logging.error(f"Data analysis error: {str(e)}")
@@ -105,22 +132,11 @@ class AIAssistant:
             3. Expected performance characteristics
             4. Potential challenges
 
-            Return in JSON format:
-            {{
-                "models": [
-                    {{
-                        "name": "model_name",
-                        "type": "traditional/ensemble",
-                        "hyperparameters": {{}},
-                        "rationale": "",
-                        "expected_performance": ""
-                    }}
-                ]
-            }}
+            Return in JSON format.
             """
 
-            response = self.model.generate_content(prompt)
-            recommendations = json.loads(response.text)
+            response = self.generate_response(prompt)
+            recommendations = json.loads(response)  # Parse JSON response
             return {'success': True, 'recommendations': recommendations}
 
         except Exception as e:
@@ -135,16 +151,16 @@ class AIAssistant:
             {json.dumps(results, indent=2)}
 
             Provide insights about:
-            1. Model performance comparison
-            2. Areas for improvement
-            3. Feature importance analysis
-            4. Optimization suggestions
+            - Model performance comparison
+            - Areas for improvement
+            - Feature importance analysis
+            - Optimization suggestions
 
             Format the response with markdown headings and bullet points.
             """
 
-            response = self.model.generate_content(prompt)
-            return {'success': True, 'insights': response.text}
+            response = self.generate_response(prompt)
+            return {'success': True, 'insights': response}
 
         except Exception as e:
             logging.error(f"Model insights error: {str(e)}")
@@ -171,16 +187,16 @@ class AIAssistant:
             {json.dumps(df_info, indent=2)}
 
             Suggest:
-            1. Feature transformations
-            2. Feature interactions
-            3. Feature selection approaches
-            4. New features that could be created
+            - Feature transformations
+            - Feature interactions
+            - Feature selection approaches
+            - New features that could be created
 
             Format the response with markdown headings and bullet points.
             """
 
-            response = self.model.generate_content(prompt)
-            return {'success': True, 'recommendations': response.text}
+            response = self.generate_response(prompt)
+            return {'success': True, 'recommendations': response}
 
         except Exception as e:
             logging.error(f"Feature recommendations error: {str(e)}")
