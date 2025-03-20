@@ -1,4 +1,4 @@
-![Untitled diagram-2025-01-09-121150](https://github.com/user-attachments/assets/5890b0f9-cbba-4ddd-97f7-a951c560a8e7)
+![Untitled diagram-2025-01-09-121150 (1)](https://github.com/user-attachments/assets/98328b2e-1c1a-42e3-a7b0-b70a205271e1)
 
 # AutoML Platform
 
