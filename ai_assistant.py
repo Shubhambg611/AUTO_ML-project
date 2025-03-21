@@ -25,7 +25,7 @@ class AIAssistant:
     def generate_response(self, prompt: str, max_tokens: int = 300):
         """Generate response using a local LLM via LM Studio API."""
         data = {
-            "model": "qwen2.5-coder-3b-instruct",  # Example: "mistralai/Mistral-7B"
+            "model": "gemma-1.1-2b-it",  # Example: "mistralai/Mistral-7B"
             "prompt": prompt,
             "max_tokens": max_tokens
         }
@@ -74,7 +74,7 @@ class AIAssistant:
 
             # Generate a structured prompt
             prompt = f"""
-            You are an expert data scientist. Analyze this dataset:
+            Analyze this dataset for machine learning:
 
             Basic Information:
             - Task Type: {task_type}
@@ -85,16 +85,15 @@ class AIAssistant:
             Column Details:
             {json.dumps(dataset_info['columns'], indent=2)}
 
-            Provide insights on:
-            - Data Quality Assessment
-            - Feature Engineering Suggestions
-            - Preprocessing Recommendations
-            - Modeling Approach
-            - Potential Challenges
+            Provide:
+            1. Data Quality Assessment
+            2. Feature Engineering Suggestions
+            3. Preprocessing Recommendations
+            4. Modeling Approach
+            5. Potential Challenges
 
-            Keep the response **short** but informative. Use bullet points.
+            Format the response with markdown headings and bullet points.
             """
-
             response = self.generate_response(prompt)
             return {'success': True, 'analysis': response}
 
@@ -121,7 +120,7 @@ class AIAssistant:
 
             Task Type: {task_type}
             Dataset Info: {json.dumps(data_summary, indent=2)}
-
+    
             For {task_type}, suggest:
             1. 3 {'traditional' if task_type == 'regression' else 'basic'} algorithms
             2. 2 ensemble learning methods
